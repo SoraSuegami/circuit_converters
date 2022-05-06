@@ -30,7 +30,7 @@ impl<G: Gate, C: BoolCircuit<G>> BoolCircuitRef<G, C> {
     }
 
     pub fn borrow(&self) -> Ref<C> {
-        self.0.borrow()
+        self.inner().borrow()
     }
 
     pub fn borrow_mut(&mut self) -> RefMut<'_, C> {

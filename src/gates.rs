@@ -85,6 +85,7 @@ pub trait Gate: Clone + Eq {
     fn output_len(&self) -> usize;
     fn input_gate_ids(&self) -> Vec<GateId>;
     fn depth(&self) -> usize;
+    fn to_str(&self) -> String;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,6 +140,16 @@ impl Gate for NXAOBoolGate {
             NXAOBoolGate::Module(g) => g.depth(),
         }
     }
+    fn to_str(&self) -> String {
+        match self {
+            NXAOBoolGate::Input(g) => g.to_str(),
+            NXAOBoolGate::Not(g) => g.to_str(),
+            NXAOBoolGate::And(g) => g.to_str(),
+            NXAOBoolGate::Xor(g) => g.to_str(),
+            NXAOBoolGate::Or(g) => g.to_str(),
+            NXAOBoolGate::Module(g) => g.to_str(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,6 +174,10 @@ impl Gate for InputGate {
     fn depth(&self) -> usize {
         0
     }
+
+    fn to_str(&self) -> String {
+        "INPUT".to_string()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,6 +201,10 @@ impl Gate for NotGate {
 
     fn depth(&self) -> usize {
         self.depth
+    }
+
+    fn to_str(&self) -> String {
+        "INV".to_string()
     }
 }
 
@@ -212,6 +231,10 @@ impl Gate for XorGate {
     fn depth(&self) -> usize {
         self.depth
     }
+
+    fn to_str(&self) -> String {
+        "XOR".to_string()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -236,6 +259,10 @@ impl Gate for AndGate {
 
     fn depth(&self) -> usize {
         self.depth
+    }
+
+    fn to_str(&self) -> String {
+        "AND".to_string()
     }
 }
 
@@ -262,31 +289,11 @@ impl Gate for OrGate {
     fn depth(&self) -> usize {
         self.depth
     }
+
+    fn to_str(&self) -> String {
+        "OR".to_string()
+    }
 }
-
-/*#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ConstGate {
-    pub value: bool,
-    pub depth: usize,
-}
-
-impl Gate for ConstGate {
-    fn input_len(&self) -> usize {
-        1
-    }
-
-    fn output_len(&self) -> usize {
-        1
-    }
-
-    fn input_gate_ids(&self) -> Vec<GateId> {
-        vec![]
-    }
-
-    fn depth(&self) -> usize {
-        self.depth
-    }
-}*/
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModuleGate {
@@ -313,5 +320,9 @@ impl Gate for ModuleGate {
 
     fn depth(&self) -> usize {
         self.depth
+    }
+
+    fn to_str(&self) -> String {
+        "MODULE".to_string()
     }
 }
