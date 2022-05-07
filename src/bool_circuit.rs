@@ -48,6 +48,8 @@ pub trait BoolCircuit<G: Gate>: Sized {
     }
     fn input_len(&self) -> usize;
     fn output_len(&self) -> usize;
+    fn num_wire(&self) -> usize;
+    fn num_gate(&self) -> usize;
     fn depth_whole(&self) -> Result<usize, BoolCircuitError>;
     fn depth_of_output(&self, output_wire_id: &WireId) -> Result<usize, BoolCircuitError>;
     fn input(&mut self) -> Result<GateId, BoolCircuitError>;
@@ -72,11 +74,12 @@ pub struct NXAOBoolCircuit {
     pub input_len: usize,
     pub output_len: usize,
     pub num_module: usize,
+    pub num_wire: usize,
     pub num_gate: usize,
-    pub num_not: usize,
+    /*pub num_not: usize,
     pub num_xor: usize,
     pub num_and: usize,
-    pub num_or: usize,
+    pub num_or: usize,*/
 }
 
 impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
@@ -88,11 +91,12 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
             input_len: 0,
             output_len: 0,
             num_module: 0,
+            num_wire: 0,
             num_gate: 0,
-            num_not: 0,
+            /*num_not: 0,
             num_xor: 0,
             num_and: 0,
-            num_or: 0,
+            num_or: 0,*/
         }
     }
 
@@ -102,6 +106,14 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
 
     fn output_len(&self) -> usize {
         self.output_len
+    }
+
+    fn num_wire(&self) -> usize {
+        self.num_wire
+    }
+
+    fn num_gate(&self) -> usize {
+        self.num_gate
     }
 
     fn depth_whole(&self) -> Result<usize, BoolCircuitError> {
@@ -129,10 +141,7 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
             value: None,
         };
         self.input_len += 1;
-        let new_gate_id = GateId(self.num_gate as u64);
-        self.gate_map
-            .insert(new_gate_id, NXAOBoolGate::Input(input_gate));
-        self.num_gate += 1;
+        let new_gate_id = self.add_gate(NXAOBoolGate::Input(input_gate));
         Ok(new_gate_id)
     }
 
@@ -153,7 +162,7 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
             depth: input_gate.depth() + 1,
         };
         let new_gate_id = self.add_gate(NXAOBoolGate::Not(not_gate));
-        self.num_not += 1;
+        //self.num_not += 1;
         Ok(new_gate_id)
     }
 
@@ -171,7 +180,7 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
             depth: new_depth,
         };
         let new_gate_id = self.add_gate(NXAOBoolGate::Xor(xor_gate));
-        self.num_xor += 1;
+        //self.num_xor += 1;
         Ok(new_gate_id)
     }
 
@@ -189,7 +198,7 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
             depth: new_depth,
         };
         let new_gate_id = self.add_gate(NXAOBoolGate::And(and_gate));
-        self.num_and += 1;
+        //self.num_and += 1;
         Ok(new_gate_id)
     }
 
@@ -207,7 +216,7 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
             depth: new_depth,
         };
         let new_gate_id = self.add_gate(NXAOBoolGate::Or(or_gate));
-        self.num_or += 1;
+        //self.num_or += 1;
         Ok(new_gate_id)
     }
 
@@ -236,6 +245,10 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
         let input_len = module_circuit.input_len();
         let output_len = module_circuit.output_len();
         let depth = max_depth + module_circuit.depth_whole()?;
+        let num_wire = module_circuit.num_wire;
+        let num_gate = module_circuit.num_gate;
+        self.num_wire += num_wire - input_len;
+        self.num_gate += num_gate;
         let new_gate_ids = (0..output_len)
             .into_iter()
             .map(|i| {
@@ -277,6 +290,7 @@ impl NXAOBoolCircuit {
         let gate_id = GateId(self.num_gate as u64);
         self.gate_map.insert(gate_id, gate);
         self.num_gate += 1;
+        self.num_wire += 1;
         gate_id
     }
 }
