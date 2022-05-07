@@ -393,4 +393,66 @@ mod test {
         let output = evaluator.eval_output(&inputs).unwrap();
         assert_eq!(output[0], true);
     }
+
+    use crate::bristol_converter::*;
+    use std::fs;
+    use std::io::{BufReader};
+    use rand::Rng;
+
+    #[test]
+    fn bristol_adder64() {
+        let mut reader = BristolNXAOReader::new();
+        let textfile = fs::read_to_string("./src/test_circuits/bristol/adder64.txt").unwrap();
+        let buf_read = BufReader::new(textfile.as_bytes());
+        let read_circuit = reader.read(buf_read).unwrap();
+        let mut evaluator = NXAOBoolEvaluator::new(read_circuit);
+        let mut rng = rand::thread_rng();
+
+        let input_l:[bool;64] = [rng.gen();64];
+        let input_r:[bool;64] = [rng.gen();64];
+        let input1 = [input_l,input_r].concat();
+        let output1 = evaluator.eval_output(&input1).unwrap();
+        let input2 = [input_r,input_l].concat();
+        let output2 = evaluator.eval_output(&input2).unwrap();
+        for i in 0..64 {
+            assert_eq!(output1[i],output2[i]);
+        }
+    }
+
+    #[test]
+    fn bristol_neg64() {
+        let mut reader = BristolNXAOReader::new();
+        let textfile = fs::read_to_string("./src/test_circuits/bristol/neg64.txt").unwrap();
+        let buf_read = BufReader::new(textfile.as_bytes());
+        let read_circuit = reader.read(buf_read).unwrap();
+        let mut evaluator = NXAOBoolEvaluator::new(read_circuit);
+        let mut rng = rand::thread_rng();
+
+        let input:[bool;64] = [rng.gen();64];
+        let output1 = evaluator.eval_output(&input).unwrap();
+        let output2 = evaluator.eval_output(&output1).unwrap();
+        for i in 0..64 {
+            assert_eq!(input[i],output2[i]);
+        }
+    }
+
+    #[test]
+    fn bristol_mult2_64() {
+        let mut reader = BristolNXAOReader::new();
+        let textfile = fs::read_to_string("./src/test_circuits/bristol/mult2_64.txt").unwrap();
+        let buf_read = BufReader::new(textfile.as_bytes());
+        let read_circuit = reader.read(buf_read).unwrap();
+        let mut evaluator = NXAOBoolEvaluator::new(read_circuit);
+        let mut rng = rand::thread_rng();
+
+        let input_l:[bool;64] = [rng.gen();64];
+        let input_r:[bool;64] = [rng.gen();64];
+        let input1 = [input_l,input_r].concat();
+        let output1 = evaluator.eval_output(&input1).unwrap();
+        let input2 = [input_r,input_l].concat();
+        let output2 = evaluator.eval_output(&input2).unwrap();
+        for i in 0..64 {
+            assert_eq!(output1[i],output2[i]);
+        }
+    }
 }

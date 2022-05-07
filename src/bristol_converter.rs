@@ -55,14 +55,14 @@ impl<G: Gate, C: BoolCircuit<G>> BristolReader<G, C> {
         let mut lines_iter = reader.lines();
         let first_strs = lines_iter.next().ok_or(BristolError::NotFoundLine(1))??;
         let mut first_strs = first_strs.split_whitespace();
-        let num_gate = first_strs
+        let _ = first_strs
             .next()
             .ok_or(BristolError::LineSplitError)?
             .parse::<usize>()?;
-        /*let num_wire = first_strs
+        let num_wire = first_strs
             .next()
             .ok_or(BristolError::LineSplitError)?
-            .parse::<usize>()?;*/
+            .parse::<usize>()?;
         let second_strs = lines_iter.next().ok_or(BristolError::NotFoundLine(1))??;
         let mut second_strs = second_strs.split_whitespace();
         let num_input = second_strs
@@ -101,10 +101,13 @@ impl<G: Gate, C: BoolCircuit<G>> BristolReader<G, C> {
         //skip one row.
         let _ = lines_iter.next().ok_or(BristolError::NotFoundLine(1))?;
 
-        let mut num_remain_gate = num_gate;
+        //let mut num_remain_gate = num_gate;
 
         for result in lines_iter {
             let l = result?;
+            if l.len()==0 {
+                break;
+            }
             let mut l = l.split_whitespace();
             let input_len = l
                 .next()
@@ -136,36 +139,45 @@ impl<G: Gate, C: BoolCircuit<G>> BristolReader<G, C> {
             }
             let gate_type = l.next().ok_or(BristolError::LineSplitError)?;
 
-            let output_gate = match gate_type {
+            match gate_type {
                 "INV" => {
                     let output_gate = circuit.not(input_gates[0])?;
                     self.gate_of_wire.insert(output_wire_ids[0], output_gate);
-                    Ok(output_gate)
-                }
+                    //Ok(output_gate)
+                },
                 "XOR" => {
                     let output_gate = circuit.xor(input_gates[0], input_gates[1])?;
                     self.gate_of_wire.insert(output_wire_ids[0], output_gate);
-                    Ok(output_gate)
-                }
+                    //Ok(output_gate)
+                },
                 "AND" => {
                     let output_gate = circuit.and(input_gates[0], input_gates[1])?;
                     self.gate_of_wire.insert(output_wire_ids[0], output_gate);
-                    Ok(output_gate)
-                }
+                    //Ok(output_gate)
+                },
                 "OR" => {
                     let output_gate = circuit.or(input_gates[0], input_gates[1])?;
                     self.gate_of_wire.insert(output_wire_ids[0], output_gate);
-                    Ok(output_gate)
-                }
+                    //Ok(output_gate)
+                },
+                "EQ" | "EQW" => {
+                    let output_gate = circuit.identity(input_gates[0])?;
+                    self.gate_of_wire.insert(output_wire_ids[0], output_gate);
+                },
                 _ => {
-                    Err(BristolError::NotSupportedGate(gate_type.to_string()))
+                    return Err(BristolError::NotSupportedGate(gate_type.to_string()))
                 }
-            }?;
-            if num_remain_gate <= output_len_sum {
+            };
+            /*if num_remain_gate <= output_len_sum {
                 circuit.output(output_gate)?;
             }
 
-            num_remain_gate -= 1;
+            num_remain_gate -= 1;*/
+        }
+
+        for i in (num_wire-output_len_sum) .. num_wire {
+            let gate_id = self.gate_of_wire[&i];
+            circuit.output(gate_id)?;
         }
 
         Ok(circuit)

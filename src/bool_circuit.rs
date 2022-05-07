@@ -58,6 +58,7 @@ pub trait BoolCircuit<G: Gate>: Sized {
     fn xor(&mut self, gate_l_id: &GateId, gate_r_id: &GateId) -> Result<GateId, BoolCircuitError>;
     fn and(&mut self, gate_l_id: &GateId, gate_r_id: &GateId) -> Result<GateId, BoolCircuitError>;
     fn or(&mut self, gate_l_id: &GateId, gate_r_id: &GateId) -> Result<GateId, BoolCircuitError>;
+    fn identity(&mut self, gate_id: &GateId) -> Result<GateId, BoolCircuitError>;
     fn register_module(&mut self, module_circuit: Self) -> ModuleId;
     fn module(
         &mut self,
@@ -218,6 +219,11 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
         let new_gate_id = self.add_gate(NXAOBoolGate::Or(or_gate));
         //self.num_or += 1;
         Ok(new_gate_id)
+    }
+
+    fn identity(&mut self, gate_id: &GateId) -> Result<GateId, BoolCircuitError> {
+        let not1 = self.not(gate_id)?;
+        self.not(&not1)
     }
 
     fn register_module(&mut self, module_circuit: Self) -> ModuleId {
