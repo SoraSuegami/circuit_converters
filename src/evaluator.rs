@@ -358,4 +358,39 @@ mod test {
         let output = evaluator.eval_output(&inputs).unwrap();
         assert_eq!(output[0], false);
     }
+
+    #[test]
+    fn module_1() {
+        let mut circuit = NXAOBoolCircuit::new();
+        let input_gate_id1 = circuit.input().unwrap();
+        let input_gate_id2 = circuit.input().unwrap();
+        let mut eq_circuit = NXAOBoolCircuit::new();
+        let eq_input_gate_id1 = eq_circuit.input().unwrap();
+        let eq_input_gate_id2 = eq_circuit.input().unwrap();
+        let eq_xor = eq_circuit.xor(&eq_input_gate_id1, &eq_input_gate_id2).unwrap();
+        let eq_not = eq_circuit.not(&eq_xor).unwrap();
+        eq_circuit.output(eq_not).unwrap();
+        let eq_module_id = circuit.register_module(eq_circuit);
+        let call_inputs = [input_gate_id1,input_gate_id2];
+        let eq_call = circuit.module(&eq_module_id, &call_inputs).unwrap();
+        circuit.output(eq_call[0]).unwrap();
+        
+        let mut evaluator = NXAOBoolEvaluator::new(circuit);
+
+        let inputs = vec![true, true];
+        let output = evaluator.eval_output(&inputs).unwrap();
+        assert_eq!(output[0], true);
+
+        let inputs = vec![true, false];
+        let output = evaluator.eval_output(&inputs).unwrap();
+        assert_eq!(output[0], false);
+
+        let inputs = vec![false, true];
+        let output = evaluator.eval_output(&inputs).unwrap();
+        assert_eq!(output[0], false);
+
+        let inputs = vec![false, false];
+        let output = evaluator.eval_output(&inputs).unwrap();
+        assert_eq!(output[0], true);
+    }
 }
