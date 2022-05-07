@@ -367,14 +367,16 @@ mod test {
         let mut eq_circuit = NXAOBoolCircuit::new();
         let eq_input_gate_id1 = eq_circuit.input().unwrap();
         let eq_input_gate_id2 = eq_circuit.input().unwrap();
-        let eq_xor = eq_circuit.xor(&eq_input_gate_id1, &eq_input_gate_id2).unwrap();
+        let eq_xor = eq_circuit
+            .xor(&eq_input_gate_id1, &eq_input_gate_id2)
+            .unwrap();
         let eq_not = eq_circuit.not(&eq_xor).unwrap();
         eq_circuit.output(eq_not).unwrap();
         let eq_module_id = circuit.register_module(eq_circuit);
-        let call_inputs = [input_gate_id1,input_gate_id2];
+        let call_inputs = [input_gate_id1, input_gate_id2];
         let eq_call = circuit.module(&eq_module_id, &call_inputs).unwrap();
         circuit.output(eq_call[0]).unwrap();
-        
+
         let mut evaluator = NXAOBoolEvaluator::new(circuit);
 
         let inputs = vec![true, true];
@@ -395,9 +397,9 @@ mod test {
     }
 
     use crate::bristol_converter::*;
-    use std::fs;
-    use std::io::{BufReader};
     use rand::Rng;
+    use std::fs;
+    use std::io::BufReader;
 
     #[test]
     fn bristol_adder64() {
@@ -408,14 +410,14 @@ mod test {
         let mut evaluator = NXAOBoolEvaluator::new(read_circuit);
         let mut rng = rand::thread_rng();
 
-        let input_l:[bool;64] = [rng.gen();64];
-        let input_r:[bool;64] = [rng.gen();64];
-        let input1 = [input_l,input_r].concat();
+        let input_l: [bool; 64] = [rng.gen(); 64];
+        let input_r: [bool; 64] = [rng.gen(); 64];
+        let input1 = [input_l, input_r].concat();
         let output1 = evaluator.eval_output(&input1).unwrap();
-        let input2 = [input_r,input_l].concat();
+        let input2 = [input_r, input_l].concat();
         let output2 = evaluator.eval_output(&input2).unwrap();
         for i in 0..64 {
-            assert_eq!(output1[i],output2[i]);
+            assert_eq!(output1[i], output2[i]);
         }
     }
 
@@ -428,11 +430,11 @@ mod test {
         let mut evaluator = NXAOBoolEvaluator::new(read_circuit);
         let mut rng = rand::thread_rng();
 
-        let input:[bool;64] = [rng.gen();64];
+        let input: [bool; 64] = [rng.gen(); 64];
         let output1 = evaluator.eval_output(&input).unwrap();
         let output2 = evaluator.eval_output(&output1).unwrap();
         for i in 0..64 {
-            assert_eq!(input[i],output2[i]);
+            assert_eq!(input[i], output2[i]);
         }
     }
 
@@ -445,14 +447,14 @@ mod test {
         let mut evaluator = NXAOBoolEvaluator::new(read_circuit);
         let mut rng = rand::thread_rng();
 
-        let input_l:[bool;64] = [rng.gen();64];
-        let input_r:[bool;64] = [rng.gen();64];
-        let input1 = [input_l,input_r].concat();
+        let input_l: [bool; 64] = [rng.gen(); 64];
+        let input_r: [bool; 64] = [rng.gen(); 64];
+        let input1 = [input_l, input_r].concat();
         let output1 = evaluator.eval_output(&input1).unwrap();
-        let input2 = [input_r,input_l].concat();
+        let input2 = [input_r, input_l].concat();
         let output2 = evaluator.eval_output(&input2).unwrap();
         for i in 0..64 {
-            assert_eq!(output1[i],output2[i]);
+            assert_eq!(output1[i], output2[i]);
         }
     }
 }
