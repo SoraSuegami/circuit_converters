@@ -13,6 +13,10 @@ pub enum BoolCircuitError {
     UnknownModule(ModuleId),
     #[error("The output of the wire id {0} is unknown.")]
     UnknownOutput(WireId),
+    #[error("The depended gate ids for the gate id {0} is unknown.")]
+    UnknownDependence(GateId),
+    #[error("The input of wire id {0} is fixed.")]
+    FixedInput(WireId),
     #[error("There is no valid gate in input gates of the module.")]
     InvalidModuleInputGate,
 }
@@ -52,12 +56,18 @@ pub trait BoolCircuit<G: Gate>: Sized {
     fn num_gate(&self) -> usize;
     fn depth_whole(&self) -> Result<usize, BoolCircuitError>;
     fn depth_of_output(&self, output_wire_id: &WireId) -> Result<usize, BoolCircuitError>;
+    fn input_to_gate_id(&self, wire_id: &WireId) -> Result<&Option<GateId>, BoolCircuitError>;
+    fn output_to_gate_id(&self, wire_id: &WireId) -> Result<&GateId, BoolCircuitError>;
+    fn get_gate(&self, gate_id: &GateId) -> Result<&NXAOBoolGate, BoolCircuitError>;
+    fn get_module(&self, module_id: &ModuleId) -> Result<&NXAOBoolCircuit, BoolCircuitError>;
+    fn get_depended_gates(&self, gate_id: &GateId) -> Result<Vec<GateId>, BoolCircuitError>;
     fn input(&mut self) -> Result<GateId, BoolCircuitError>;
     fn output(&mut self, gate_id: GateId) -> Result<WireId, BoolCircuitError>;
     fn not(&mut self, gate_id: &GateId) -> Result<GateId, BoolCircuitError>;
     fn xor(&mut self, gate_l_id: &GateId, gate_r_id: &GateId) -> Result<GateId, BoolCircuitError>;
     fn and(&mut self, gate_l_id: &GateId, gate_r_id: &GateId) -> Result<GateId, BoolCircuitError>;
     fn or(&mut self, gate_l_id: &GateId, gate_r_id: &GateId) -> Result<GateId, BoolCircuitError>;
+    fn eq(&mut self, gate_l_id: &GateId, gate_r_id: &GateId) -> Result<GateId, BoolCircuitError>;
     fn identity(&mut self, gate_id: &GateId) -> Result<GateId, BoolCircuitError>;
     fn register_module(&mut self, module_circuit: Self) -> ModuleId;
     fn module(
@@ -65,41 +75,39 @@ pub trait BoolCircuit<G: Gate>: Sized {
         module_id: &ModuleId,
         gate_ids: &[GateId],
     ) -> Result<Vec<GateId>, BoolCircuitError>;
+    fn fix_input(&mut self, wire_id: &WireId, value: bool) -> Result<(), BoolCircuitError>;
+    //fn const_bit(&mut self, value: bool) -> Result<GateId, BoolCircuitError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NXAOBoolCircuit {
+    pub input_map: HashMap<WireId, Option<GateId>>,
     pub output_map: HashMap<WireId, GateId>,
     pub gate_map: HashMap<GateId, NXAOBoolGate>,
     pub module_map: HashMap<ModuleId, Self>,
+    pub gate_dependence_map: HashMap<GateId, Vec<GateId>>,
     pub input_len: usize,
     pub output_len: usize,
     pub num_module: usize,
     pub num_wire: usize,
     pub num_gate: usize,
     pub gate_index: usize,
-    /*pub num_not: usize,
-    pub num_xor: usize,
-    pub num_and: usize,
-    pub num_or: usize,*/
 }
 
 impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
     fn new() -> Self {
         Self {
+            input_map: HashMap::new(),
             output_map: HashMap::new(),
             gate_map: HashMap::new(),
             module_map: HashMap::new(),
+            gate_dependence_map: HashMap::new(),
             input_len: 0,
             output_len: 0,
             num_module: 0,
             num_wire: 0,
             num_gate: 0,
             gate_index: 0,
-            /*num_not: 0,
-            num_xor: 0,
-            num_and: 0,
-            num_or: 0,*/
         }
     }
 
@@ -137,14 +145,48 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
         Ok(gate.depth())
     }
 
+    fn input_to_gate_id(&self, wire_id: &WireId) -> Result<&Option<GateId>, BoolCircuitError> {
+        self.input_map
+            .get(wire_id)
+            .ok_or(BoolCircuitError::UnknownOutput(*wire_id))
+    }
+
+    fn output_to_gate_id(&self, wire_id: &WireId) -> Result<&GateId, BoolCircuitError> {
+        self.output_map
+            .get(wire_id)
+            .ok_or(BoolCircuitError::UnknownOutput(*wire_id))
+    }
+
+    fn get_gate(&self, gate_id: &GateId) -> Result<&NXAOBoolGate, BoolCircuitError> {
+        self.gate_map
+            .get(gate_id)
+            .ok_or(BoolCircuitError::UnknownGate(*gate_id))
+    }
+
+    fn get_module(&self, module_id: &ModuleId) -> Result<&NXAOBoolCircuit, BoolCircuitError> {
+        self.module_map
+            .get(module_id)
+            .ok_or(BoolCircuitError::UnknownModule(*module_id))
+    }
+
+    fn get_depended_gates(&self, gate_id: &GateId) -> Result<Vec<GateId>, BoolCircuitError> {
+        let ids = self.gate_dependence_map.get(gate_id);
+        if ids.is_none() {
+            Ok(Vec::new())
+        } else {
+            Ok(self.gate_dependence_map[gate_id].to_vec())
+        }
+    }
+
     fn input(&mut self) -> Result<GateId, BoolCircuitError> {
         let new_wire_id = WireId(self.input_len as u64);
         let input_gate = InputGate {
             wire_id: new_wire_id,
-            value: None,
+            is_fixed: false
         };
         self.input_len += 1;
         let new_gate_id = self.add_gate(NXAOBoolGate::Input(input_gate));
+        self.input_map.insert(input_gate.wire_id, Some(new_gate_id));
         Ok(new_gate_id)
     }
 
@@ -165,8 +207,8 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
             depth: input_gate.depth() + 1,
         };
         let new_gate_id = self.add_gate(NXAOBoolGate::Not(not_gate));
+        self.add_dependence(gate_id, &new_gate_id)?;
         self.num_gate += 1;
-        //self.num_not += 1;
         Ok(new_gate_id)
     }
 
@@ -184,8 +226,9 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
             depth: new_depth,
         };
         let new_gate_id = self.add_gate(NXAOBoolGate::Xor(xor_gate));
+        self.add_dependence(gate_l_id, &new_gate_id)?;
+        self.add_dependence(gate_r_id, &new_gate_id)?;
         self.num_gate += 1;
-        //self.num_xor += 1;
         Ok(new_gate_id)
     }
 
@@ -203,8 +246,9 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
             depth: new_depth,
         };
         let new_gate_id = self.add_gate(NXAOBoolGate::And(and_gate));
+        self.add_dependence(gate_l_id, &new_gate_id)?;
+        self.add_dependence(gate_r_id, &new_gate_id)?;
         self.num_gate += 1;
-        //self.num_and += 1;
         Ok(new_gate_id)
     }
 
@@ -222,9 +266,15 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
             depth: new_depth,
         };
         let new_gate_id = self.add_gate(NXAOBoolGate::Or(or_gate));
+        self.add_dependence(gate_l_id, &new_gate_id)?;
+        self.add_dependence(gate_r_id, &new_gate_id)?;
         self.num_gate += 1;
-        //self.num_or += 1;
         Ok(new_gate_id)
+    }
+
+    fn eq(&mut self, gate_l_id: &GateId, gate_r_id: &GateId) -> Result<GateId, BoolCircuitError> {
+        let xor = self.xor(gate_l_id, gate_r_id)?;
+        self.not(&xor)
     }
 
     fn identity(&mut self, gate_id: &GateId) -> Result<GateId, BoolCircuitError> {
@@ -275,35 +325,160 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
                 self.add_gate(NXAOBoolGate::Module(module_gate))
             })
             .collect::<Vec<GateId>>();
+        for (input_id, self_id) in gate_ids.into_iter().zip(&new_gate_ids) {
+            self.add_dependence(input_id, self_id)?;
+        }
         Ok(new_gate_ids)
     }
+
+    fn fix_input(&mut self, wire_id: &WireId, value: bool) -> Result<(), BoolCircuitError> {
+        let input_gate_id = self.input_to_gate_id(wire_id)?.ok_or(BoolCircuitError::FixedInput(*wire_id))?;
+        let new_input_gate = InputGate {
+            wire_id: *wire_id,
+            is_fixed: true
+        };
+        self.gate_map.insert(input_gate_id, NXAOBoolGate::Input(new_input_gate));
+        self.modify_gate_with_fixed_input(&input_gate_id, value)?;
+        self.input_len -= 1;
+        self.num_wire -= 1;
+        self.input_map.insert(*wire_id, None);
+        self.gate_dependence_map.insert(input_gate_id, Vec::new());
+        Ok(())
+    }
+
+    /*fn const_bit(&mut self, value: bool) -> Result<GateId, BoolCircuitError> {
+        let input = self.input()?;
+        let input_gate = self.get_gate(&input)?;
+        match input_gate {
+            NXAOBoolGate::Input(gate) => {
+                self.fix_input(&gate.wire_id, value)?;
+            },
+            _=> {}
+        };
+        Ok(input)
+    }*/
 }
 
 impl NXAOBoolCircuit {
-    pub fn output_to_gate_id(&self, wire_id: &WireId) -> Result<&GateId, BoolCircuitError> {
-        self.output_map
-            .get(wire_id)
-            .ok_or(BoolCircuitError::UnknownOutput(*wire_id))
-    }
-
-    pub fn get_gate(&self, gate_id: &GateId) -> Result<&NXAOBoolGate, BoolCircuitError> {
-        self.gate_map
-            .get(gate_id)
-            .ok_or(BoolCircuitError::UnknownGate(*gate_id))
-    }
-
-    pub fn get_module(&self, module_id: &ModuleId) -> Result<&NXAOBoolCircuit, BoolCircuitError> {
-        self.module_map
-            .get(module_id)
-            .ok_or(BoolCircuitError::UnknownModule(*module_id))
-    }
-
     fn add_gate(&mut self, gate: NXAOBoolGate) -> GateId {
         let gate_id = GateId(self.gate_index as u64);
         self.gate_map.insert(gate_id, gate);
         self.gate_index += 1;
         self.num_wire += 1;
         gate_id
+    }
+
+    fn add_dependence(
+        &mut self,
+        input_id: &GateId,
+        self_id: &GateId,
+    ) -> Result<(), BoolCircuitError> {
+        let gate_ids = self.gate_dependence_map.get(input_id);
+        if gate_ids.is_none() {
+            self.gate_dependence_map.insert(*input_id, vec![*self_id]);
+        } else {
+            let gate_ids = self
+                .gate_dependence_map
+                .get_mut(input_id)
+                .ok_or(BoolCircuitError::UnknownDependence(*input_id))?;
+            gate_ids.push(*self_id);
+        }
+        Ok(())
+    }
+
+    fn modify_gate_with_fixed_input(&mut self, gate_id: &GateId, value: bool) -> Result<(), BoolCircuitError> {
+        let depended_gate_ids = self.get_depended_gates(gate_id)?;
+        //println!("gate_id {}, depend_ids {:?}",gate_id, depended_gate_ids);
+        for id in depended_gate_ids {
+            let gate = self.get_gate(&id)?;
+            match gate {
+                NXAOBoolGate::Input(_) => {},
+                NXAOBoolGate::Not(_) => {
+                    let not_fixed_bit = !value;
+                    self.modify_gate_with_fixed_input(&id, not_fixed_bit)?;
+                },
+                NXAOBoolGate::Xor(gate) => {
+                    let pair_input_gate_id = if gate.left_id == *gate_id {
+                        gate.right_id
+                    } else {
+                        gate.left_id
+                    };
+                    let pair_input_gate = self.get_gate(&pair_input_gate_id)?;
+                    let depth = pair_input_gate.depth()+1;
+                    if !value {
+                        let not = self.not(&pair_input_gate_id)?;
+                        let new_gate = NotGate {
+                            id: not,
+                            depth: depth
+                        };
+                        self.gate_map.insert(id, NXAOBoolGate::Not(new_gate));
+                    }
+                    else {
+                        let new_not_gate = NotGate {
+                            id: pair_input_gate_id,
+                            depth: pair_input_gate.depth()+1
+                        };
+                        self.gate_map.insert(id, NXAOBoolGate::Not(new_not_gate));
+                    }
+                },
+                NXAOBoolGate::And(gate) => {
+                    let pair_input_gate_id = if gate.left_id == *gate_id {
+                        gate.right_id
+                    } else {
+                        gate.left_id
+                    };
+                    let pair_input_gate = self.get_gate(&pair_input_gate_id)?;
+                    let depth = pair_input_gate.depth()+1;
+                    if !value {
+                        self.num_wire -= 1;
+                        let dependence = self.gate_dependence_map.get_mut(&pair_input_gate_id).ok_or(BoolCircuitError::UnknownDependence(pair_input_gate_id))?;
+                        for i in 0..dependence.len() {
+                            if id == dependence[i] {
+                                dependence.remove(i);
+                                break;
+                            }
+                        }
+                        self.modify_gate_with_fixed_input(&id, false)?;
+                        /*let new_xor_gate = XorGate {
+                            left_id: pair_input_gate_id,
+                            right_id: pair_input_gate_id,
+                            depth: pair_input_gate.depth()+1
+                        };
+                        self.gate_map.insert(id, NXAOBoolGate::Xor(new_xor_gate));*/
+                    }
+                    else {
+                        let not = self.not(&pair_input_gate_id)?;
+                        let new_gate = NotGate {
+                            id: not,
+                            depth: depth
+                        };
+                        self.gate_map.insert(id, NXAOBoolGate::Not(new_gate));
+                    }
+                },
+                NXAOBoolGate::Or(gate) => {
+                    let pair_input_gate_id = if gate.left_id == *gate_id {
+                        gate.right_id
+                    } else {
+                        gate.left_id
+                    };
+                    let pair_input_gate = self.get_gate(&pair_input_gate_id)?;
+                    let depth = pair_input_gate.depth()+1;
+                    if !value {
+                        let not = self.not(&pair_input_gate_id)?;
+                        let new_gate = NotGate {
+                            id: not,
+                            depth: depth
+                        };
+                        self.gate_map.insert(id, NXAOBoolGate::Not(new_gate));
+                    }
+                    else {
+                        self.modify_gate_with_fixed_input(&id, true)?;
+                    }
+                },
+                NXAOBoolGate::Module(_) => {}
+            }
+        }
+        Ok(())
     }
 }
 

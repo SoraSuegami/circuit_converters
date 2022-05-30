@@ -155,7 +155,7 @@ impl Gate for NXAOBoolGate {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InputGate {
     pub wire_id: WireId,
-    pub value: Option<bool>,
+    pub is_fixed: bool
 }
 
 impl Gate for InputGate {
