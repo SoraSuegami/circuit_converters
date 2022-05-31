@@ -84,18 +84,17 @@ pub trait Gate: Clone + Eq {
     fn input_len(&self) -> usize;
     fn output_len(&self) -> usize;
     fn input_gate_ids(&self) -> Vec<GateId>;
-    fn depth(&self) -> usize;
     fn to_str(&self) -> String;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NXAOBoolGate {
     Input(InputGate),
+    Const(ConstGate),
     Not(NotGate),
     And(AndGate),
     Xor(XorGate),
     Or(OrGate),
-    //Const(ConstGate),
     Module(ModuleGate),
 }
 
@@ -103,6 +102,7 @@ impl Gate for NXAOBoolGate {
     fn input_len(&self) -> usize {
         match self {
             NXAOBoolGate::Input(g) => g.input_len(),
+            NXAOBoolGate::Const(g) => g.input_len(),
             NXAOBoolGate::Not(g) => g.input_len(),
             NXAOBoolGate::And(g) => g.input_len(),
             NXAOBoolGate::Xor(g) => g.input_len(),
@@ -113,6 +113,7 @@ impl Gate for NXAOBoolGate {
     fn output_len(&self) -> usize {
         match self {
             NXAOBoolGate::Input(g) => g.output_len(),
+            NXAOBoolGate::Const(g) => g.output_len(),
             NXAOBoolGate::Not(g) => g.output_len(),
             NXAOBoolGate::And(g) => g.output_len(),
             NXAOBoolGate::Xor(g) => g.output_len(),
@@ -123,6 +124,7 @@ impl Gate for NXAOBoolGate {
     fn input_gate_ids(&self) -> Vec<GateId> {
         match self {
             NXAOBoolGate::Input(g) => g.input_gate_ids(),
+            NXAOBoolGate::Const(g) => g.input_gate_ids(),
             NXAOBoolGate::Not(g) => g.input_gate_ids(),
             NXAOBoolGate::And(g) => g.input_gate_ids(),
             NXAOBoolGate::Xor(g) => g.input_gate_ids(),
@@ -130,19 +132,10 @@ impl Gate for NXAOBoolGate {
             NXAOBoolGate::Module(g) => g.input_gate_ids(),
         }
     }
-    fn depth(&self) -> usize {
-        match self {
-            NXAOBoolGate::Input(g) => g.depth(),
-            NXAOBoolGate::Not(g) => g.depth(),
-            NXAOBoolGate::And(g) => g.depth(),
-            NXAOBoolGate::Xor(g) => g.depth(),
-            NXAOBoolGate::Or(g) => g.depth(),
-            NXAOBoolGate::Module(g) => g.depth(),
-        }
-    }
     fn to_str(&self) -> String {
         match self {
             NXAOBoolGate::Input(g) => g.to_str(),
+            NXAOBoolGate::Const(g) => g.to_str(),
             NXAOBoolGate::Not(g) => g.to_str(),
             NXAOBoolGate::And(g) => g.to_str(),
             NXAOBoolGate::Xor(g) => g.to_str(),
@@ -155,7 +148,6 @@ impl Gate for NXAOBoolGate {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InputGate {
     pub wire_id: WireId,
-    pub is_fixed: bool
 }
 
 impl Gate for InputGate {
@@ -171,19 +163,37 @@ impl Gate for InputGate {
         vec![]
     }
 
-    fn depth(&self) -> usize {
-        0
-    }
-
     fn to_str(&self) -> String {
         "INPUT".to_string()
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConstGate {
+    pub value: bool,
+}
+
+impl Gate for ConstGate {
+    fn input_len(&self) -> usize {
+        0
+    }
+
+    fn output_len(&self) -> usize {
+        1
+    }
+
+    fn input_gate_ids(&self) -> Vec<GateId> {
+        vec![]
+    }
+
+    fn to_str(&self) -> String {
+        "CONST".to_string()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NotGate {
     pub id: GateId,
-    pub depth: usize,
 }
 
 impl Gate for NotGate {
@@ -199,10 +209,6 @@ impl Gate for NotGate {
         vec![self.id]
     }
 
-    fn depth(&self) -> usize {
-        self.depth
-    }
-
     fn to_str(&self) -> String {
         "INV".to_string()
     }
@@ -212,7 +218,6 @@ impl Gate for NotGate {
 pub struct XorGate {
     pub left_id: GateId,
     pub right_id: GateId,
-    pub depth: usize,
 }
 
 impl Gate for XorGate {
@@ -228,10 +233,6 @@ impl Gate for XorGate {
         vec![self.left_id, self.right_id]
     }
 
-    fn depth(&self) -> usize {
-        self.depth
-    }
-
     fn to_str(&self) -> String {
         "XOR".to_string()
     }
@@ -241,7 +242,6 @@ impl Gate for XorGate {
 pub struct AndGate {
     pub left_id: GateId,
     pub right_id: GateId,
-    pub depth: usize,
 }
 
 impl Gate for AndGate {
@@ -257,10 +257,6 @@ impl Gate for AndGate {
         vec![self.left_id, self.right_id]
     }
 
-    fn depth(&self) -> usize {
-        self.depth
-    }
-
     fn to_str(&self) -> String {
         "AND".to_string()
     }
@@ -270,7 +266,6 @@ impl Gate for AndGate {
 pub struct OrGate {
     pub left_id: GateId,
     pub right_id: GateId,
-    pub depth: usize,
 }
 
 impl Gate for OrGate {
@@ -286,10 +281,6 @@ impl Gate for OrGate {
         vec![self.left_id, self.right_id]
     }
 
-    fn depth(&self) -> usize {
-        self.depth
-    }
-
     fn to_str(&self) -> String {
         "OR".to_string()
     }
@@ -301,7 +292,6 @@ pub struct ModuleGate {
     pub output_len: usize,
     pub input_ids: Vec<GateId>,
     pub out_index: usize,
-    pub depth: usize,
     pub module_id: ModuleId,
 }
 
@@ -316,10 +306,6 @@ impl Gate for ModuleGate {
 
     fn input_gate_ids(&self) -> Vec<GateId> {
         self.input_ids.to_vec()
-    }
-
-    fn depth(&self) -> usize {
-        self.depth
     }
 
     fn to_str(&self) -> String {

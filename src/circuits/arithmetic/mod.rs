@@ -4,6 +4,9 @@ use crate::circuits::{build_circuit_from_bristol, BuildCircuitError};
 use crate::gates::*;
 use std::io::BufReader;
 
+mod int;
+pub use int::*;
+
 build_circuit_from_bristol!(build_adder64, "adder64.txt");
 build_circuit_from_bristol!(build_sub64, "sub64.txt");
 build_circuit_from_bristol!(build_neg64, "neg64.txt");

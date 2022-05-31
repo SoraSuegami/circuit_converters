@@ -108,7 +108,11 @@ impl NXAOBoolEvaluator {
         match gate {
             NXAOBoolGate::Input(_) => {
                 Ok(())
-            }
+            },
+            NXAOBoolGate::Const(gate) => {
+                evaled_map.insert(*gate_id, gate.value);
+                Ok(())
+            },
             NXAOBoolGate::Not(gate) => {
                 if evaled_map.get(&gate.id).is_none() {
                     let input_gate = self.circuit.get_gate(&gate.id)?;
@@ -120,7 +124,7 @@ impl NXAOBoolEvaluator {
                 let output_bit = !input_bit;
                 evaled_map.insert(*gate_id, output_bit);
                 Ok(())
-            }
+            },
             NXAOBoolGate::Xor(gate) => {
                 if evaled_map.get(&gate.left_id).is_none() {
                     let input_gate = self.circuit.get_gate(&gate.left_id)?;
@@ -139,7 +143,7 @@ impl NXAOBoolEvaluator {
                 let output_bit = *input_bit_l ^ *input_bit_r;
                 evaled_map.insert(*gate_id, output_bit);
                 Ok(())
-            }
+            },
             NXAOBoolGate::And(gate) => {
                 if evaled_map.get(&gate.left_id).is_none() {
                     let input_gate = self.circuit.get_gate(&gate.left_id)?;
@@ -158,7 +162,7 @@ impl NXAOBoolEvaluator {
                 let output_bit = *input_bit_l & *input_bit_r;
                 evaled_map.insert(*gate_id, output_bit);
                 Ok(())
-            }
+            },
             NXAOBoolGate::Or(gate) => {
                 if evaled_map.get(&gate.left_id).is_none() {
                     let input_gate = self.circuit.get_gate(&gate.left_id)?;
@@ -177,7 +181,7 @@ impl NXAOBoolEvaluator {
                 let output_bit = *input_bit_l | *input_bit_r;
                 evaled_map.insert(*gate_id, output_bit);
                 Ok(())
-            }
+            },
             NXAOBoolGate::Module(gate) => {
                 let input_ids = gate.input_gate_ids();
                 let mut input_bits: Vec<bool> = Vec::new();
@@ -404,6 +408,51 @@ mod test {
 
     use crate::circuits::{arithmetic::*, cryptography::*};
     use rand::Rng;
+
+    #[test]
+    fn adder() {
+        let circuit = build_add_circuit(256).unwrap();
+        let mut evaluator = NXAOBoolEvaluator::new(circuit);
+        let mut rng = rand::thread_rng();
+
+        let mut input_l: [bool; 256] = [false;256];
+        let mut input_r: [bool; 256] = [false;256];
+        for i in 0..256 {
+            input_l[i] = rng.gen();
+            input_r[i] = rng.gen();
+        }
+        let input1 = [input_l, input_r].concat();
+        let output1 = evaluator.eval_output(&input1).unwrap();
+        let input2 = [input_r, input_l].concat();
+        let output2 = evaluator.eval_output(&input2).unwrap();
+        for i in 0..256 {
+            assert_eq!(output1[i], output2[i]);
+        }
+    }
+
+    #[test]
+    fn suber() {
+        let sub_circuit = build_sub_circuit(256).unwrap();
+        let mut evaluator = NXAOBoolEvaluator::new(sub_circuit);
+        let mut rng = rand::thread_rng();
+
+        let mut input_l: [bool; 256] = [false;256];
+        let mut input_r: [bool; 256] = [false;256];
+        for i in 0..256 {
+            input_l[i] = rng.gen();
+            input_r[i] = rng.gen();
+        }
+        let input1 = [input_l, input_r].concat();
+        let output1 = evaluator.eval_output(&input1).unwrap();
+
+        let add_circuit = build_add_circuit(256).unwrap();
+        let mut evaluator = NXAOBoolEvaluator::new(add_circuit);
+        let input2 = [input_r.to_vec(), output1].concat();
+        let output2 = evaluator.eval_output(&input2).unwrap();
+        for i in 0..256 {
+            assert_eq!(input_l[i], output2[i]);
+        }
+    }
 
     #[test]
     fn bristol_adder64() {
