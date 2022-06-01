@@ -20,13 +20,13 @@ pub trait BoolEvaluator<G: Gate, C: BoolCircuit<G>> {
     fn eval_output(&mut self, inputs: &[bool]) -> Result<Vec<bool>, EvaluatorError>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct NXAOBoolEvaluator {
-    pub circuit: NXAOBoolCircuit,
+    pub circuit: BoolCircuitRef<NXAOBoolGate,NXAOBoolCircuit>,
 }
 
-impl BoolEvaluator<NXAOBoolGate, NXAOBoolCircuit> for NXAOBoolEvaluator {
-    fn circuit(&self) -> &NXAOBoolCircuit {
+impl BoolEvaluator<NXAOBoolGate, BoolCircuitRef<NXAOBoolGate,NXAOBoolCircuit>> for NXAOBoolEvaluator {
+    fn circuit(&self) -> &BoolCircuitRef<NXAOBoolGate,NXAOBoolCircuit> {
         &self.circuit
     }
 
@@ -41,7 +41,7 @@ impl BoolEvaluator<NXAOBoolGate, NXAOBoolCircuit> for NXAOBoolEvaluator {
             let gate_id = circuit.input_to_gate_id(&last_input_wire_id)?;
             match gate_id {
                 Some(id) => {
-                    evaled_map.insert(*id, inputs[i]);
+                    evaled_map.insert(id, inputs[i]);
                     i += 1;
                 },
                 None => {}
@@ -61,7 +61,7 @@ impl BoolEvaluator<NXAOBoolGate, NXAOBoolCircuit> for NXAOBoolEvaluator {
 }
 
 impl NXAOBoolEvaluator {
-    pub fn new(circuit: NXAOBoolCircuit) -> Self {
+    pub fn new(circuit: BoolCircuitRef<NXAOBoolGate,NXAOBoolCircuit>) -> Self {
         Self { circuit }
     }
 
@@ -91,10 +91,10 @@ impl NXAOBoolEvaluator {
 
         let output_gate_id = self.circuit.output_to_gate_id(wire_id)?;
         let output_gate = self.circuit.get_gate(&output_gate_id)?;
-        self.eval_single_gate(inputs, output_gate_id, output_gate, evaled_map)?;
+        self.eval_single_gate(inputs, &output_gate_id, &output_gate, evaled_map)?;
         let output_bit = evaled_map
-            .get(output_gate_id)
-            .ok_or(EvaluatorError::UnknownEvaledBit(*output_gate_id))?;
+            .get(&output_gate_id)
+            .ok_or(EvaluatorError::UnknownEvaledBit(output_gate_id))?;
         Ok(*output_bit)
     }
 
@@ -197,7 +197,7 @@ impl NXAOBoolEvaluator {
                 }
                 //println!("module input bits {:?}",input_bits);
                 let module_circuit = self.circuit.get_module(&gate.module_id)?;
-                let mut evaluator = Self::new(module_circuit.clone());
+                let mut evaluator = Self::new(module_circuit.to_ref());
                 let output_bits = evaluator.eval_output(&input_bits)?;
                 let first_output_id = GateId(gate_id.0 - (gate.out_index as u64));
                 for i in 0..gate.output_len() {
@@ -219,7 +219,7 @@ mod test {
         let mut circuit = NXAOBoolCircuit::new();
         let input_gate_id = circuit.input().unwrap();
         circuit.output(input_gate_id).unwrap();
-        let mut evaluator = NXAOBoolEvaluator::new(circuit);
+        let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
 
         let inputs = vec![true];
         let output = evaluator.eval_output(&inputs).unwrap();
@@ -236,7 +236,7 @@ mod test {
         let input_gate_id = circuit.input().unwrap();
         let not_gate_id = circuit.not(&input_gate_id).unwrap();
         circuit.output(not_gate_id).unwrap();
-        let mut evaluator = NXAOBoolEvaluator::new(circuit);
+        let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
 
         let inputs = vec![true];
         let output = evaluator.eval_output(&inputs).unwrap();
@@ -254,7 +254,7 @@ mod test {
         let input_gate_id2 = circuit.input().unwrap();
         let or_gate_id = circuit.xor(&input_gate_id1, &input_gate_id2).unwrap();
         circuit.output(or_gate_id).unwrap();
-        let mut evaluator = NXAOBoolEvaluator::new(circuit);
+        let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
 
         let inputs = vec![true, true];
         let output = evaluator.eval_output(&inputs).unwrap();
@@ -280,7 +280,7 @@ mod test {
         let input_gate_id2 = circuit.input().unwrap();
         let and_gate_id = circuit.and(&input_gate_id1, &input_gate_id2).unwrap();
         circuit.output(and_gate_id).unwrap();
-        let mut evaluator = NXAOBoolEvaluator::new(circuit);
+        let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
 
         let inputs = vec![true, true];
         let output = evaluator.eval_output(&inputs).unwrap();
@@ -306,7 +306,7 @@ mod test {
         let input_gate_id2 = circuit.input().unwrap();
         let or_gate_id = circuit.or(&input_gate_id1, &input_gate_id2).unwrap();
         circuit.output(or_gate_id).unwrap();
-        let mut evaluator = NXAOBoolEvaluator::new(circuit);
+        let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
 
         let inputs = vec![true, true];
         let output = evaluator.eval_output(&inputs).unwrap();
@@ -334,7 +334,7 @@ mod test {
         let and_gate_id = circuit.and(&input_gate_id1, &input_gate_id2).unwrap();
         let or_gate_id = circuit.or(&and_gate_id, &input_gate_id3).unwrap();
         circuit.output(or_gate_id).unwrap();
-        let mut evaluator = NXAOBoolEvaluator::new(circuit);
+        let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
 
         let inputs = vec![true, true, true];
         let output = evaluator.eval_output(&inputs).unwrap();
@@ -387,7 +387,7 @@ mod test {
         let eq_call = circuit.module(&eq_module_id, &call_inputs).unwrap();
         circuit.output(eq_call[0]).unwrap();
 
-        let mut evaluator = NXAOBoolEvaluator::new(circuit);
+        let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
 
         let inputs = vec![true, true];
         let output = evaluator.eval_output(&inputs).unwrap();
@@ -410,54 +410,9 @@ mod test {
     use rand::Rng;
 
     #[test]
-    fn adder() {
-        let circuit = build_add_circuit(256).unwrap();
-        let mut evaluator = NXAOBoolEvaluator::new(circuit);
-        let mut rng = rand::thread_rng();
-
-        let mut input_l: [bool; 256] = [false;256];
-        let mut input_r: [bool; 256] = [false;256];
-        for i in 0..256 {
-            input_l[i] = rng.gen();
-            input_r[i] = rng.gen();
-        }
-        let input1 = [input_l, input_r].concat();
-        let output1 = evaluator.eval_output(&input1).unwrap();
-        let input2 = [input_r, input_l].concat();
-        let output2 = evaluator.eval_output(&input2).unwrap();
-        for i in 0..256 {
-            assert_eq!(output1[i], output2[i]);
-        }
-    }
-
-    #[test]
-    fn suber() {
-        let sub_circuit = build_sub_circuit(256).unwrap();
-        let mut evaluator = NXAOBoolEvaluator::new(sub_circuit);
-        let mut rng = rand::thread_rng();
-
-        let mut input_l: [bool; 256] = [false;256];
-        let mut input_r: [bool; 256] = [false;256];
-        for i in 0..256 {
-            input_l[i] = rng.gen();
-            input_r[i] = rng.gen();
-        }
-        let input1 = [input_l, input_r].concat();
-        let output1 = evaluator.eval_output(&input1).unwrap();
-
-        let add_circuit = build_add_circuit(256).unwrap();
-        let mut evaluator = NXAOBoolEvaluator::new(add_circuit);
-        let input2 = [input_r.to_vec(), output1].concat();
-        let output2 = evaluator.eval_output(&input2).unwrap();
-        for i in 0..256 {
-            assert_eq!(input_l[i], output2[i]);
-        }
-    }
-
-    #[test]
     fn bristol_adder64() {
-        let circuit = build_adder64().unwrap();
-        let mut evaluator = NXAOBoolEvaluator::new(circuit);
+        let circuit:NXAOBoolCircuit = build_adder64().unwrap();
+        let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
         let mut rng = rand::thread_rng();
 
         let input_l: [bool; 64] = [rng.gen(); 64];
@@ -473,8 +428,8 @@ mod test {
 
     #[test]
     fn bristol_neg64() {
-        let circuit = build_neg64().unwrap();
-        let mut evaluator = NXAOBoolEvaluator::new(circuit);
+        let circuit:NXAOBoolCircuit = build_neg64().unwrap();
+        let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
         let mut rng = rand::thread_rng();
 
         let input: [bool; 64] = [rng.gen(); 64];
@@ -487,8 +442,8 @@ mod test {
 
     #[test]
     fn bristol_mult2_64() {
-        let circuit = build_mult2_64().unwrap();
-        let mut evaluator = NXAOBoolEvaluator::new(circuit);
+        let circuit:NXAOBoolCircuit = build_mult2_64().unwrap();
+        let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
         let mut rng = rand::thread_rng();
 
         let input_l: [bool; 64] = [rng.gen(); 64];
@@ -605,8 +560,8 @@ mod test {
 
     #[test]
     fn aes128() {
-        let circuit = build_aes128().unwrap();
-        let mut evaluator = NXAOBoolEvaluator::new(circuit);
+        let circuit:NXAOBoolCircuit = build_aes128().unwrap();
+        let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
         let mut rng = rand::thread_rng();
         let key:[bool;128] = [rng.gen();128];
         let msg:[bool;128] = [rng.gen();128];
