@@ -1,135 +1,204 @@
 use crate::bool_circuit::*;
-use crate::bristol_converter::*;
-use crate::circuits::{build_circuit_from_bristol, BuildCircuitError};
+use crate::circuits::BuildCircuitError;
 use crate::gates::*;
-use std::ops::{Not,BitAnd,BitOr,BitXor,BitAndAssign,BitOrAssign,BitXorAssign};
+use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not};
 
 #[derive(Debug, Clone)]
-pub struct AllocBits<G: Gate, C: BoolCircuit<G>, const N:usize> {
+pub struct AllocBits<G: Gate, C: BoolCircuit<G>, const N: usize> {
     pub bits: Vec<GateId>,
-    pub c_ref: BoolCircuitRef<G,C>,
-    not_mid: ModuleId,
-    and_mid: ModuleId,
-    or_mid: ModuleId,
-    xor_mid: ModuleId
+    pub config: AllocBitsConfig<G, C, N>,
 }
 
-impl<G: Gate, C: BoolCircuit<G>,const N:usize> AllocBits<G,C,N> {
-    pub fn new(mut c_ref: BoolCircuitRef<G,C>, not_mid: ModuleId, and_mid: ModuleId, or_mid: ModuleId,xor_mid: ModuleId) -> Result<Self,BuildCircuitError> {
+impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocBits<G, C, N> {
+    pub fn new(
+        mut c_ref: BoolCircuitRef<G, C>,
+        config: &AllocBitsConfig<G, C, N>,
+    ) -> Result<Self, BuildCircuitError> {
         let mut bits = Vec::new();
         for _ in 0..N {
             bits.push(c_ref.input()?);
         }
         Ok(Self {
             bits,
-            c_ref,
-            not_mid,
-            and_mid,
-            or_mid,
-            xor_mid
+            config: config.clone(),
         })
     }
 
-    pub fn output(&self) -> Result<(),BuildCircuitError> {
-        let mut c_ref = self.c_ref.clone();
+    pub fn output(&self) -> Result<(), BuildCircuitError> {
+        let mut c_ref = self.config.c_ref.clone();
         for i in 0..N {
             c_ref.output(self.bits[i])?;
         }
         Ok(())
     }
+
+    pub fn eq(&self, other: &Self) -> Result<GateId, BuildCircuitError> {
+        let mut config = self.config.clone();
+        let new_ref = &mut config.c_ref;
+        let inputs = [&self.bits[..], &other.bits[..]].concat();
+        let eq_bit = new_ref.module(&self.config.eq_mid, &inputs)?[0];
+        Ok(eq_bit)
+    }
+
+    pub fn neq(&self, other: &Self) -> Result<GateId, BuildCircuitError> {
+        let mut config = self.config.clone();
+        let new_ref = &mut config.c_ref;
+        let inputs = [&self.bits[..], &other.bits[..]].concat();
+        let neq_bit = new_ref.module(&self.config.neq_mid, &inputs)?[0];
+        Ok(neq_bit)
+    }
 }
 
-impl<'a, G: Gate, C: BoolCircuit<G>,const N:usize> Not for &'a AllocBits<G,C,N> {
-    type Output = AllocBits<G,C,N>;
+impl<'a, G: Gate, C: BoolCircuit<G>, const N: usize> Not for &'a AllocBits<G, C, N> {
+    type Output = AllocBits<G, C, N>;
     fn not(self) -> Self::Output {
-        let mut new_ref = self.c_ref.clone();
+        let mut config = self.config.clone();
+        let new_ref = &mut config.c_ref;
         let inputs = &self.bits[..];
-        let outputs = new_ref.module(&self.not_mid, inputs).expect("AllocBits Not Error");
+        let outputs = new_ref
+            .module(&self.config.not_mid, inputs)
+            .expect("AllocBits Not Error");
         AllocBits {
             bits: outputs,
-            c_ref: new_ref,
-            not_mid: self.not_mid,
-            and_mid: self.and_mid,
-            or_mid: self.or_mid,
-            xor_mid: self.xor_mid
+            config,
         }
     }
 }
 
-impl<'a, 'b, G: Gate, C: BoolCircuit<G>,const N:usize> BitAnd<&'b AllocBits<G,C,N>> for &'a AllocBits<G,C,N> {
-    type Output = AllocBits<G,C,N>;
-    fn bitand(self, other: &'b AllocBits<G,C,N>) -> Self::Output {
-        let mut new_ref = self.c_ref.clone();
-        let inputs = [&self.bits[..],&other.bits[..]].concat();
-        let outputs = new_ref.module(&self.and_mid, &inputs).expect("AllocBits And Error");
+impl<'a, 'b, G: Gate, C: BoolCircuit<G>, const N: usize> BitAnd<&'b AllocBits<G, C, N>>
+    for &'a AllocBits<G, C, N>
+{
+    type Output = AllocBits<G, C, N>;
+    fn bitand(self, other: &'b AllocBits<G, C, N>) -> Self::Output {
+        let mut config = self.config.clone();
+        let new_ref = &mut config.c_ref;
+        let inputs = [&self.bits[..], &other.bits[..]].concat();
+        let outputs = new_ref
+            .module(&self.config.and_mid, &inputs)
+            .expect("AllocBits And Error");
         AllocBits {
             bits: outputs,
-            c_ref: new_ref,
-            not_mid: self.not_mid,
-            and_mid: self.and_mid,
-            or_mid: self.or_mid,
-            xor_mid: self.xor_mid
+            config,
         }
     }
 }
 
-impl<'a, 'b, G: Gate, C: BoolCircuit<G>,const N:usize> BitOr<&'b AllocBits<G,C,N>> for &'a AllocBits<G,C,N> {
-    type Output = AllocBits<G,C,N>;
-    fn bitor(self, other: &'b AllocBits<G,C,N>) -> Self::Output {
-        let mut new_ref = self.c_ref.clone();
-        let inputs = [&self.bits[..],&other.bits[..]].concat();
-        let outputs = new_ref.module(&self.or_mid, &inputs).expect("AllocBits Or Error");
+impl<'a, 'b, G: Gate, C: BoolCircuit<G>, const N: usize> BitOr<&'b AllocBits<G, C, N>>
+    for &'a AllocBits<G, C, N>
+{
+    type Output = AllocBits<G, C, N>;
+    fn bitor(self, other: &'b AllocBits<G, C, N>) -> Self::Output {
+        let mut config = self.config.clone();
+        let new_ref = &mut config.c_ref;
+        let inputs = [&self.bits[..], &other.bits[..]].concat();
+        let outputs = new_ref
+            .module(&self.config.or_mid, &inputs)
+            .expect("AllocBits Or Error");
         AllocBits {
             bits: outputs,
-            c_ref: new_ref,
-            not_mid: self.not_mid,
-            and_mid: self.and_mid,
-            or_mid: self.or_mid,
-            xor_mid: self.xor_mid
+            config,
         }
     }
 }
 
-impl<'a, 'b, G: Gate, C: BoolCircuit<G>,const N:usize> BitXor<&'b AllocBits<G,C,N>> for &'a AllocBits<G,C,N> {
-    type Output = AllocBits<G,C,N>;
-    fn bitxor(self, other: &'b AllocBits<G,C,N>) -> Self::Output {
-        let mut new_ref = self.c_ref.clone();
-        let inputs = [&self.bits[..],&other.bits[..]].concat();
-        let outputs = new_ref.module(&self.xor_mid, &inputs).expect("AllocBits Xor Error");
+impl<'a, 'b, G: Gate, C: BoolCircuit<G>, const N: usize> BitXor<&'b AllocBits<G, C, N>>
+    for &'a AllocBits<G, C, N>
+{
+    type Output = AllocBits<G, C, N>;
+    fn bitxor(self, other: &'b AllocBits<G, C, N>) -> Self::Output {
+        let mut config = self.config.clone();
+        let new_ref = &mut config.c_ref;
+        let inputs = [&self.bits[..], &other.bits[..]].concat();
+        let outputs = new_ref
+            .module(&self.config.xor_mid, &inputs)
+            .expect("AllocBits Xor Error");
         AllocBits {
             bits: outputs,
-            c_ref: new_ref,
-            not_mid: self.not_mid,
-            and_mid: self.and_mid,
-            or_mid: self.or_mid,
-            xor_mid: self.xor_mid
+            config,
         }
     }
 }
 
-impl<'a, G: Gate, C: BoolCircuit<G>,const N:usize> BitAndAssign<&'a AllocBits<G,C,N>> for AllocBits<G,C,N> {
-    fn bitand_assign(&mut self, other:&'a AllocBits<G,C,N>) {
-        let inputs = [&self.bits[..],&other.bits[..]].concat();
-        self.bits = self.c_ref.module(&self.and_mid,&inputs).expect("AllocBits AndAssign Error");
+impl<'a, G: Gate, C: BoolCircuit<G>, const N: usize> BitAndAssign<&'a AllocBits<G, C, N>>
+    for AllocBits<G, C, N>
+{
+    fn bitand_assign(&mut self, other: &'a AllocBits<G, C, N>) {
+        let inputs = [&self.bits[..], &other.bits[..]].concat();
+        self.bits = self
+            .config
+            .c_ref
+            .module(&self.config.and_mid, &inputs)
+            .expect("AllocBits AndAssign Error");
     }
 }
 
-impl<'a, G: Gate, C: BoolCircuit<G>,const N:usize> BitOrAssign<&'a AllocBits<G,C,N>> for AllocBits<G,C,N> {
-    fn bitor_assign(&mut self, other:&'a AllocBits<G,C,N>) {
-        let inputs = [&self.bits[..],&other.bits[..]].concat();
-        self.bits = self.c_ref.module(&self.or_mid,&inputs).expect("AllocBits OrAssign Error");
+impl<'a, G: Gate, C: BoolCircuit<G>, const N: usize> BitOrAssign<&'a AllocBits<G, C, N>>
+    for AllocBits<G, C, N>
+{
+    fn bitor_assign(&mut self, other: &'a AllocBits<G, C, N>) {
+        let inputs = [&self.bits[..], &other.bits[..]].concat();
+        self.bits = self
+            .config
+            .c_ref
+            .module(&self.config.or_mid, &inputs)
+            .expect("AllocBits OrAssign Error");
     }
 }
 
-impl<'a, G: Gate, C: BoolCircuit<G>,const N:usize> BitXorAssign<&'a AllocBits<G,C,N>> for AllocBits<G,C,N> {
-    fn bitxor_assign(&mut self, other:&'a AllocBits<G,C,N>) {
-        let inputs = [&self.bits[..],&other.bits[..]].concat();
-        self.bits = self.c_ref.module(&self.xor_mid,&inputs).expect("AllocBits XorAssign Error");
+impl<'a, G: Gate, C: BoolCircuit<G>, const N: usize> BitXorAssign<&'a AllocBits<G, C, N>>
+    for AllocBits<G, C, N>
+{
+    fn bitxor_assign(&mut self, other: &'a AllocBits<G, C, N>) {
+        let inputs = [&self.bits[..], &other.bits[..]].concat();
+        self.bits = self
+            .config
+            .c_ref
+            .module(&self.config.xor_mid, &inputs)
+            .expect("AllocBits XorAssign Error");
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct AllocBitsConfig<G: Gate, C: BoolCircuit<G>, const N: usize> {
+    pub c_ref: BoolCircuitRef<G, C>,
+    pub not_mid: ModuleId,
+    pub and_mid: ModuleId,
+    pub or_mid: ModuleId,
+    pub xor_mid: ModuleId,
+    pub eq_mid: ModuleId,
+    pub neq_mid: ModuleId,
+}
 
-pub fn build_not_circuit<G: Gate, C: BoolCircuit<G>>(n_bits:usize) -> Result<C, BuildCircuitError> {
+impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocBitsConfig<G, C, N> {
+    pub fn new(c_ref: &BoolCircuitRef<G, C>) -> Result<Self, BuildCircuitError> {
+        let mut c_ref = c_ref.clone();
+        let not = build_not_circuit(N)?;
+        let not_mid = c_ref.register_module(not);
+        let and = build_and_circuit(N)?;
+        let and_mid = c_ref.register_module(and);
+        let or = build_or_circuit(N)?;
+        let or_mid = c_ref.register_module(or);
+        let xor = build_xor_circuit(N)?;
+        let xor_mid = c_ref.register_module(xor);
+        let eq = build_eq_circuit(N)?;
+        let eq_mid = c_ref.register_module(eq);
+        let neq = build_neq_circuit(N)?;
+        let neq_mid = c_ref.register_module(neq);
+        Ok(Self {
+            c_ref: c_ref,
+            not_mid,
+            and_mid,
+            or_mid,
+            xor_mid,
+            eq_mid,
+            neq_mid,
+        })
+    }
+}
+
+pub fn build_not_circuit<G: Gate, C: BoolCircuit<G>>(
+    n_bits: usize,
+) -> Result<C, BuildCircuitError> {
     let mut circuit = C::new();
     let mut inputs = Vec::new();
     for _ in 0..n_bits {
@@ -142,7 +211,9 @@ pub fn build_not_circuit<G: Gate, C: BoolCircuit<G>>(n_bits:usize) -> Result<C, 
     Ok(circuit)
 }
 
-pub fn build_and_circuit<G: Gate, C: BoolCircuit<G>>(n_bits:usize) -> Result<C, BuildCircuitError> {
+pub fn build_and_circuit<G: Gate, C: BoolCircuit<G>>(
+    n_bits: usize,
+) -> Result<C, BuildCircuitError> {
     let mut circuit = C::new();
     let mut a_inputs = Vec::new();
     let mut b_inputs = Vec::new();
@@ -159,7 +230,7 @@ pub fn build_and_circuit<G: Gate, C: BoolCircuit<G>>(n_bits:usize) -> Result<C, 
     Ok(circuit)
 }
 
-pub fn build_or_circuit<G: Gate, C: BoolCircuit<G>>(n_bits:usize) -> Result<C, BuildCircuitError> {
+pub fn build_or_circuit<G: Gate, C: BoolCircuit<G>>(n_bits: usize) -> Result<C, BuildCircuitError> {
     let mut circuit = C::new();
     let mut a_inputs = Vec::new();
     let mut b_inputs = Vec::new();
@@ -176,7 +247,9 @@ pub fn build_or_circuit<G: Gate, C: BoolCircuit<G>>(n_bits:usize) -> Result<C, B
     Ok(circuit)
 }
 
-pub fn build_xor_circuit<G: Gate, C: BoolCircuit<G>>(n_bits:usize) -> Result<C, BuildCircuitError> {
+pub fn build_xor_circuit<G: Gate, C: BoolCircuit<G>>(
+    n_bits: usize,
+) -> Result<C, BuildCircuitError> {
     let mut circuit = C::new();
     let mut a_inputs = Vec::new();
     let mut b_inputs = Vec::new();
@@ -193,6 +266,49 @@ pub fn build_xor_circuit<G: Gate, C: BoolCircuit<G>>(n_bits:usize) -> Result<C, 
     Ok(circuit)
 }
 
+pub fn build_eq_circuit<G: Gate, C: BoolCircuit<G>>(n_bits: usize) -> Result<C, BuildCircuitError> {
+    let mut circuit = C::new();
+    let mut a_inputs = Vec::new();
+    let mut b_inputs = Vec::new();
+    for _ in 0..n_bits {
+        a_inputs.push(circuit.input()?);
+    }
+    for _ in 0..n_bits {
+        b_inputs.push(circuit.input()?);
+    }
+
+    let mut eq_bit = circuit.constant(true)?;
+    for i in 0..n_bits {
+        let is_eq = circuit.eq(&a_inputs[i], &b_inputs[i])?;
+        eq_bit = circuit.and(&eq_bit, &is_eq)?;
+    }
+    circuit.output(eq_bit)?;
+    Ok(circuit)
+}
+
+pub fn build_neq_circuit<G: Gate, C: BoolCircuit<G>>(
+    n_bits: usize,
+) -> Result<C, BuildCircuitError> {
+    let mut circuit = C::new();
+    let eq = build_eq_circuit(n_bits)?;
+    let eq_mid = circuit.register_module(eq);
+
+    let mut a_inputs = Vec::new();
+    let mut b_inputs = Vec::new();
+    for _ in 0..n_bits {
+        a_inputs.push(circuit.input()?);
+    }
+    for _ in 0..n_bits {
+        b_inputs.push(circuit.input()?);
+    }
+
+    let inputs = [a_inputs, b_inputs].concat();
+    let eq_bit = circuit.module(&eq_mid, &inputs)?[0];
+    let neq_bit = circuit.not(&eq_bit)?;
+    circuit.output(neq_bit)?;
+    Ok(circuit)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -202,125 +318,97 @@ mod test {
 
     #[test]
     fn not() {
-        let mut circuit = NXAOBoolCircuit::new();
-        let not_circuit = build_not_circuit(256).unwrap();
-        let and_circuit = build_and_circuit(256).unwrap();
-        let or_circuit = build_or_circuit(256).unwrap();
-        let xor_circuit = build_xor_circuit(256).unwrap();
-        let not_mid = circuit.register_module(not_circuit);
-        let and_mid = circuit.register_module(and_circuit);
-        let or_mid = circuit.register_module(or_circuit);
-        let xor_mid = circuit.register_module(xor_circuit);
+        let circuit = NXAOBoolCircuit::new();
         let c_ref = circuit.to_ref();
-        let bits = AllocBits::<_,_,256>::new(c_ref.clone(),not_mid,and_mid,or_mid,xor_mid).unwrap();
+        let config = AllocBitsConfig::new(&c_ref).unwrap();
+        let bits = AllocBits::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
         let outs = !(&bits);
         outs.output().unwrap();
-        
+
         let mut evaluator = NXAOBoolEvaluator::new(c_ref);
         let mut rng = rand::thread_rng();
-        let mut inputs = [false;256];
+        let mut inputs = [false; 256];
         for i in 0..256 {
             inputs[i] = rng.gen();
         }
         let output = evaluator.eval_output(&inputs).unwrap();
         for i in 0..256 {
-            assert_eq!(output[i],!inputs[i]);
+            assert_eq!(output[i], !inputs[i]);
         }
     }
 
     #[test]
     fn and() {
-        let mut circuit = NXAOBoolCircuit::new();
-        let not_circuit = build_not_circuit(256).unwrap();
-        let and_circuit = build_and_circuit(256).unwrap();
-        let or_circuit = build_or_circuit(256).unwrap();
-        let xor_circuit = build_xor_circuit(256).unwrap();
-        let not_mid = circuit.register_module(not_circuit);
-        let and_mid = circuit.register_module(and_circuit);
-        let or_mid = circuit.register_module(or_circuit);
-        let xor_mid = circuit.register_module(xor_circuit);
+        let circuit = NXAOBoolCircuit::new();
         let c_ref = circuit.to_ref();
-        let bits_l = AllocBits::<_,_,256>::new(c_ref.clone(),not_mid,and_mid,or_mid,xor_mid).unwrap();
-        let bits_r = AllocBits::<_,_,256>::new(c_ref.clone(),not_mid,and_mid,or_mid,xor_mid).unwrap();
+        let config = AllocBitsConfig::new(&c_ref).unwrap();
+        let bits_l = AllocBits::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
+        let bits_r = AllocBits::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
         let outs = (&bits_l) & (&bits_r);
         outs.output().unwrap();
-        
+
         let mut evaluator = NXAOBoolEvaluator::new(c_ref);
         let mut rng = rand::thread_rng();
-        let mut inputs_l = [false;256];
-        let mut inputs_r = [false;256];
+        let mut inputs_l = [false; 256];
+        let mut inputs_r = [false; 256];
         for i in 0..256 {
             inputs_l[i] = rng.gen();
             inputs_r[i] = rng.gen();
         }
-        let inputs = [inputs_l,inputs_r].concat();
+        let inputs = [inputs_l, inputs_r].concat();
         let output = evaluator.eval_output(&inputs).unwrap();
         for i in 0..256 {
-            assert_eq!(output[i],inputs_l[i] & inputs_r[i]);
+            assert_eq!(output[i], inputs_l[i] & inputs_r[i]);
         }
     }
 
     #[test]
     fn or() {
-        let mut circuit = NXAOBoolCircuit::new();
-        let not_circuit = build_not_circuit(256).unwrap();
-        let and_circuit = build_and_circuit(256).unwrap();
-        let or_circuit = build_or_circuit(256).unwrap();
-        let xor_circuit = build_xor_circuit(256).unwrap();
-        let not_mid = circuit.register_module(not_circuit);
-        let and_mid = circuit.register_module(and_circuit);
-        let or_mid = circuit.register_module(or_circuit);
-        let xor_mid = circuit.register_module(xor_circuit);
+        let circuit = NXAOBoolCircuit::new();
         let c_ref = circuit.to_ref();
-        let bits_l = AllocBits::<_,_,256>::new(c_ref.clone(),not_mid,and_mid,or_mid,xor_mid).unwrap();
-        let bits_r = AllocBits::<_,_,256>::new(c_ref.clone(),not_mid,and_mid,or_mid,xor_mid).unwrap();
+        let config = AllocBitsConfig::new(&c_ref).unwrap();
+        let bits_l = AllocBits::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
+        let bits_r = AllocBits::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
         let outs = (&bits_l) | (&bits_r);
         outs.output().unwrap();
-        
+
         let mut evaluator = NXAOBoolEvaluator::new(c_ref);
         let mut rng = rand::thread_rng();
-        let mut inputs_l = [false;256];
-        let mut inputs_r = [false;256];
+        let mut inputs_l = [false; 256];
+        let mut inputs_r = [false; 256];
         for i in 0..256 {
             inputs_l[i] = rng.gen();
             inputs_r[i] = rng.gen();
         }
-        let inputs = [inputs_l,inputs_r].concat();
+        let inputs = [inputs_l, inputs_r].concat();
         let output = evaluator.eval_output(&inputs).unwrap();
         for i in 0..256 {
-            assert_eq!(output[i],inputs_l[i] | inputs_r[i]);
+            assert_eq!(output[i], inputs_l[i] | inputs_r[i]);
         }
     }
 
     #[test]
     fn xor() {
-        let mut circuit = NXAOBoolCircuit::new();
-        let not_circuit = build_not_circuit(256).unwrap();
-        let and_circuit = build_and_circuit(256).unwrap();
-        let or_circuit = build_or_circuit(256).unwrap();
-        let xor_circuit = build_xor_circuit(256).unwrap();
-        let not_mid = circuit.register_module(not_circuit);
-        let and_mid = circuit.register_module(and_circuit);
-        let or_mid = circuit.register_module(or_circuit);
-        let xor_mid = circuit.register_module(xor_circuit);
+        let circuit = NXAOBoolCircuit::new();
         let c_ref = circuit.to_ref();
-        let bits_l = AllocBits::<_,_,256>::new(c_ref.clone(),not_mid,and_mid,or_mid,xor_mid).unwrap();
-        let bits_r = AllocBits::<_,_,256>::new(c_ref.clone(),not_mid,and_mid,or_mid,xor_mid).unwrap();
+        let config = AllocBitsConfig::new(&c_ref).unwrap();
+        let bits_l = AllocBits::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
+        let bits_r = AllocBits::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
         let outs = (&bits_l) ^ (&bits_r);
         outs.output().unwrap();
-        
+
         let mut evaluator = NXAOBoolEvaluator::new(c_ref);
         let mut rng = rand::thread_rng();
-        let mut inputs_l = [false;256];
-        let mut inputs_r = [false;256];
+        let mut inputs_l = [false; 256];
+        let mut inputs_r = [false; 256];
         for i in 0..256 {
             inputs_l[i] = rng.gen();
             inputs_r[i] = rng.gen();
         }
-        let inputs = [inputs_l,inputs_r].concat();
+        let inputs = [inputs_l, inputs_r].concat();
         let output = evaluator.eval_output(&inputs).unwrap();
         for i in 0..256 {
-            assert_eq!(output[i],inputs_l[i] ^ inputs_r[i]);
+            assert_eq!(output[i], inputs_l[i] ^ inputs_r[i]);
         }
     }
 }

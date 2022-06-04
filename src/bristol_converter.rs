@@ -211,15 +211,18 @@ impl<W: Write> BristolNXAOWriter<W> {
         };
         let mut last_input_wire_id = WireId(0);
         let mut i = 0;
-        while i<input_len  {
+        while i < input_len {
             let gate_id = self.circuit.input_to_gate_id(&last_input_wire_id)?.clone();
             match gate_id {
                 Some(id) => {
                     let gate = self.circuit.get_gate(&id)?.clone();
-                    println!("input wire id {} gate id {} num wire {}",last_input_wire_id,id,self.num_wire);
+                    println!(
+                        "input wire id {} gate id {} num wire {}",
+                        last_input_wire_id, id, self.num_wire
+                    );
                     self.write_single_gate(&id, &gate, wire_of_gate)?;
                     i += 1;
-                },
+                }
                 None => {}
             };
             last_input_wire_id += WireId(1);
@@ -242,10 +245,10 @@ impl<W: Write> BristolNXAOWriter<W> {
             output_gate_ids.push(output_gate_id);
             output_gates.push(output_gate.clone());
             match output_gate {
-                NXAOBoolGate::Input(_) => {},
+                NXAOBoolGate::Input(_) => {}
                 NXAOBoolGate::Const(_) => {
                     return Err(BristolError::ConstGateInWriter(output_gate_id))
-                },
+                }
                 NXAOBoolGate::Not(gate) => {
                     if wire_of_gate.get(&gate.id).is_none() {
                         let input_gate = self.circuit.get_gate(&gate.id)?.clone();
@@ -311,10 +314,8 @@ impl<W: Write> BristolNXAOWriter<W> {
         match gate {
             NXAOBoolGate::Input(gate) => {
                 self.update_wire(gate_id, 0, None, &gate.to_str(), wire_of_gate)
-            },
-            NXAOBoolGate::Const(_) => {
-                Err(BristolError::ConstGateInWriter(*gate_id))
-            },
+            }
+            NXAOBoolGate::Const(_) => Err(BristolError::ConstGateInWriter(*gate_id)),
             NXAOBoolGate::Not(gate) => {
                 if wire_of_gate.get(&gate.id).is_none() {
                     let input_gate = self.circuit.get_gate(&gate.id)?.clone();
@@ -328,7 +329,7 @@ impl<W: Write> BristolNXAOWriter<W> {
                     &gate.to_str(),
                     wire_of_gate,
                 )
-            },
+            }
             NXAOBoolGate::Xor(gate) => {
                 if wire_of_gate.get(&gate.left_id).is_none() {
                     let input_gate = self.circuit.get_gate(&gate.left_id)?.clone();
@@ -347,7 +348,7 @@ impl<W: Write> BristolNXAOWriter<W> {
                     &gate.to_str(),
                     wire_of_gate,
                 )
-            },
+            }
             NXAOBoolGate::And(gate) => {
                 if wire_of_gate.get(&gate.left_id).is_none() {
                     let input_gate = self.circuit.get_gate(&gate.left_id)?.clone();
@@ -366,7 +367,7 @@ impl<W: Write> BristolNXAOWriter<W> {
                     &gate.to_str(),
                     wire_of_gate,
                 )
-            },
+            }
             NXAOBoolGate::Or(gate) => {
                 if wire_of_gate.get(&gate.left_id).is_none() {
                     let input_gate = self.circuit.get_gate(&gate.left_id)?.clone();
@@ -385,7 +386,7 @@ impl<W: Write> BristolNXAOWriter<W> {
                     &gate.to_str(),
                     wire_of_gate,
                 )
-            },
+            }
             NXAOBoolGate::Module(gate) => {
                 let input_ids = gate.input_gate_ids();
                 for id in &input_ids {
@@ -532,5 +533,4 @@ mod test {
         let read_circuit = reader.read(buf_read);
         assert!(read_circuit.is_ok());
     }
-
 }

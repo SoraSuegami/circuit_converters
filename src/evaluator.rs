@@ -22,11 +22,13 @@ pub trait BoolEvaluator<G: Gate, C: BoolCircuit<G>> {
 
 #[derive(Debug, Clone)]
 pub struct NXAOBoolEvaluator {
-    pub circuit: BoolCircuitRef<NXAOBoolGate,NXAOBoolCircuit>,
+    pub circuit: BoolCircuitRef<NXAOBoolGate, NXAOBoolCircuit>,
 }
 
-impl BoolEvaluator<NXAOBoolGate, BoolCircuitRef<NXAOBoolGate,NXAOBoolCircuit>> for NXAOBoolEvaluator {
-    fn circuit(&self) -> &BoolCircuitRef<NXAOBoolGate,NXAOBoolCircuit> {
+impl BoolEvaluator<NXAOBoolGate, BoolCircuitRef<NXAOBoolGate, NXAOBoolCircuit>>
+    for NXAOBoolEvaluator
+{
+    fn circuit(&self) -> &BoolCircuitRef<NXAOBoolGate, NXAOBoolCircuit> {
         &self.circuit
     }
 
@@ -37,13 +39,13 @@ impl BoolEvaluator<NXAOBoolGate, BoolCircuitRef<NXAOBoolGate,NXAOBoolCircuit>> f
         let mut evaled_map = HashMap::<GateId, bool>::new();
         let mut last_input_wire_id = WireId(0);
         let mut i = 0;
-        while i<inputs.len()  {
+        while i < inputs.len() {
             let gate_id = circuit.input_to_gate_id(&last_input_wire_id)?;
             match gate_id {
                 Some(id) => {
                     evaled_map.insert(id, inputs[i]);
                     i += 1;
-                },
+                }
                 None => {}
             };
             last_input_wire_id += WireId(1);
@@ -56,12 +58,10 @@ impl BoolEvaluator<NXAOBoolGate, BoolCircuitRef<NXAOBoolGate,NXAOBoolCircuit>> f
         }
         Ok(outputs)
     }
-
-    
 }
 
 impl NXAOBoolEvaluator {
-    pub fn new(circuit: BoolCircuitRef<NXAOBoolGate,NXAOBoolCircuit>) -> Self {
+    pub fn new(circuit: BoolCircuitRef<NXAOBoolGate, NXAOBoolCircuit>) -> Self {
         Self { circuit }
     }
 
@@ -106,13 +106,11 @@ impl NXAOBoolEvaluator {
         evaled_map: &mut HashMap<GateId, bool>,
     ) -> Result<(), EvaluatorError> {
         match gate {
-            NXAOBoolGate::Input(_) => {
-                Ok(())
-            },
+            NXAOBoolGate::Input(_) => Ok(()),
             NXAOBoolGate::Const(gate) => {
                 evaled_map.insert(*gate_id, gate.value);
                 Ok(())
-            },
+            }
             NXAOBoolGate::Not(gate) => {
                 if evaled_map.get(&gate.id).is_none() {
                     let input_gate = self.circuit.get_gate(&gate.id)?;
@@ -124,7 +122,7 @@ impl NXAOBoolEvaluator {
                 let output_bit = !input_bit;
                 evaled_map.insert(*gate_id, output_bit);
                 Ok(())
-            },
+            }
             NXAOBoolGate::Xor(gate) => {
                 if evaled_map.get(&gate.left_id).is_none() {
                     let input_gate = self.circuit.get_gate(&gate.left_id)?;
@@ -143,7 +141,7 @@ impl NXAOBoolEvaluator {
                 let output_bit = *input_bit_l ^ *input_bit_r;
                 evaled_map.insert(*gate_id, output_bit);
                 Ok(())
-            },
+            }
             NXAOBoolGate::And(gate) => {
                 if evaled_map.get(&gate.left_id).is_none() {
                     let input_gate = self.circuit.get_gate(&gate.left_id)?;
@@ -162,7 +160,7 @@ impl NXAOBoolEvaluator {
                 let output_bit = *input_bit_l & *input_bit_r;
                 evaled_map.insert(*gate_id, output_bit);
                 Ok(())
-            },
+            }
             NXAOBoolGate::Or(gate) => {
                 if evaled_map.get(&gate.left_id).is_none() {
                     let input_gate = self.circuit.get_gate(&gate.left_id)?;
@@ -181,7 +179,7 @@ impl NXAOBoolEvaluator {
                 let output_bit = *input_bit_l | *input_bit_r;
                 evaled_map.insert(*gate_id, output_bit);
                 Ok(())
-            },
+            }
             NXAOBoolGate::Module(gate) => {
                 let input_ids = gate.input_gate_ids();
                 let mut input_bits: Vec<bool> = Vec::new();
@@ -411,7 +409,7 @@ mod test {
 
     #[test]
     fn bristol_adder64() {
-        let circuit:NXAOBoolCircuit = build_adder64().unwrap();
+        let circuit: NXAOBoolCircuit = build_adder64().unwrap();
         let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
         let mut rng = rand::thread_rng();
 
@@ -428,7 +426,7 @@ mod test {
 
     #[test]
     fn bristol_neg64() {
-        let circuit:NXAOBoolCircuit = build_neg64().unwrap();
+        let circuit: NXAOBoolCircuit = build_neg64().unwrap();
         let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
         let mut rng = rand::thread_rng();
 
@@ -442,7 +440,7 @@ mod test {
 
     #[test]
     fn bristol_mult2_64() {
-        let circuit:NXAOBoolCircuit = build_mult2_64().unwrap();
+        let circuit: NXAOBoolCircuit = build_mult2_64().unwrap();
         let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
         let mut rng = rand::thread_rng();
 
@@ -458,8 +456,8 @@ mod test {
     }
 
     use crate::utils::*;
-    use sha2::{Digest, Sha256};
     use hex;
+    use sha2::{Digest, Sha256};
 
     /*const INIT_SHA256_STATE: [u32; 8] = [
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
@@ -560,12 +558,12 @@ mod test {
 
     #[test]
     fn aes128() {
-        let circuit:NXAOBoolCircuit = build_aes128().unwrap();
+        let circuit: NXAOBoolCircuit = build_aes128().unwrap();
         let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
         let mut rng = rand::thread_rng();
-        let key:[bool;128] = [rng.gen();128];
-        let msg:[bool;128] = [rng.gen();128];
-        let enc_input = [key,msg].concat();
+        let key: [bool; 128] = [rng.gen(); 128];
+        let msg: [bool; 128] = [rng.gen(); 128];
+        let enc_input = [key, msg].concat();
         let enc_output = evaluator.eval_output(&enc_input).unwrap();
     }
 }
