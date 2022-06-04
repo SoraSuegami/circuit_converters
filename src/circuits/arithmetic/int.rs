@@ -25,6 +25,14 @@ impl<G: Gate, C: BoolCircuit<G>,const N:usize> AllocInt<G,C,N> {
             muler_mid
         })
     }
+
+    pub fn output(&self) -> Result<(),BuildCircuitError> {
+        let mut c_ref = self.c_ref.clone();
+        for i in 0..N {
+            c_ref.output(self.val_le[i])?;
+        }
+        Ok(())
+    }
 }
 
 impl<'a, 'b, G: Gate, C: BoolCircuit<G>,const N:usize> Add<&'b AllocInt<G,C,N>> for &'a AllocInt<G,C,N> {

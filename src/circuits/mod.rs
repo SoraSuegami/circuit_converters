@@ -1,3 +1,4 @@
+pub mod logic;
 pub mod arithmetic;
 pub mod cryptography;
 use crate::bool_circuit::BoolCircuitError;
