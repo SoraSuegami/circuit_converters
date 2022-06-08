@@ -2,7 +2,7 @@ use crate::bool_circuit::*;
 use crate::bristol_converter::*;
 use crate::circuits::{build_circuit_from_bristol, BuildCircuitError};
 use crate::gates::*;
-use crate::utils::*;
+//use crate::utils::*;
 use std::io::BufReader;
 use thiserror::Error;
 

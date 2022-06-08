@@ -10,13 +10,12 @@ pub struct AllocBits<G: Gate, C: BoolCircuit<G>, const N: usize> {
 }
 
 impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocBits<G, C, N> {
-    pub fn new(
-        mut c_ref: BoolCircuitRef<G, C>,
-        config: &AllocBitsConfig<G, C, N>,
-    ) -> Result<Self, BuildCircuitError> {
+    pub fn new(config: &AllocBitsConfig<G, C, N>) -> Result<Self, BuildCircuitError> {
+        let mut config = config.clone();
+        let new_ref = &mut config.c_ref;
         let mut bits = Vec::new();
         for _ in 0..N {
-            bits.push(c_ref.input()?);
+            bits.push(new_ref.input()?);
         }
         Ok(Self {
             bits,
@@ -321,7 +320,7 @@ mod test {
         let circuit = NXAOBoolCircuit::new();
         let c_ref = circuit.to_ref();
         let config = AllocBitsConfig::new(&c_ref).unwrap();
-        let bits = AllocBits::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
+        let bits = AllocBits::<_, _, 256>::new(&config).unwrap();
         let outs = !(&bits);
         outs.output().unwrap();
 
@@ -342,8 +341,8 @@ mod test {
         let circuit = NXAOBoolCircuit::new();
         let c_ref = circuit.to_ref();
         let config = AllocBitsConfig::new(&c_ref).unwrap();
-        let bits_l = AllocBits::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
-        let bits_r = AllocBits::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
+        let bits_l = AllocBits::<_, _, 256>::new(&config).unwrap();
+        let bits_r = AllocBits::<_, _, 256>::new(&config).unwrap();
         let outs = (&bits_l) & (&bits_r);
         outs.output().unwrap();
 
@@ -367,8 +366,8 @@ mod test {
         let circuit = NXAOBoolCircuit::new();
         let c_ref = circuit.to_ref();
         let config = AllocBitsConfig::new(&c_ref).unwrap();
-        let bits_l = AllocBits::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
-        let bits_r = AllocBits::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
+        let bits_l = AllocBits::<_, _, 256>::new(&config).unwrap();
+        let bits_r = AllocBits::<_, _, 256>::new(&config).unwrap();
         let outs = (&bits_l) | (&bits_r);
         outs.output().unwrap();
 
@@ -392,8 +391,8 @@ mod test {
         let circuit = NXAOBoolCircuit::new();
         let c_ref = circuit.to_ref();
         let config = AllocBitsConfig::new(&c_ref).unwrap();
-        let bits_l = AllocBits::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
-        let bits_r = AllocBits::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
+        let bits_l = AllocBits::<_, _, 256>::new(&config).unwrap();
+        let bits_r = AllocBits::<_, _, 256>::new(&config).unwrap();
         let outs = (&bits_l) ^ (&bits_r);
         outs.output().unwrap();
 

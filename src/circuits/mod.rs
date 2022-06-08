@@ -1,11 +1,10 @@
 pub mod arithmetic;
-pub mod logic;
-//pub use finite_fields;
 pub mod cryptography;
+pub mod finite_field;
+pub mod logic;
 use crate::bool_circuit::BoolCircuitError;
 use crate::bristol_converter::*;
-//use crate::finite_fields::*;
-use crate::cryptography::BuildCryptographicCircuitError;
+pub use crate::cryptography::BuildCryptographicCircuitError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]

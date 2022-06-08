@@ -1,6 +1,7 @@
 use crate::logic::{build_eq_circuit, build_neq_circuit};
 use crate::*;
-use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
+use num_bigint::BigUint;
+use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::usize;
 
 #[derive(Debug, Clone)]
@@ -11,13 +12,44 @@ pub struct AllocInt<G: Gate, C: BoolCircuit<G>, const N: usize> {
 }
 
 impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocInt<G, C, N> {
-    pub fn new(
-        mut c_ref: BoolCircuitRef<G, C>,
-        config: &AllocIntConfig<G, C, N>,
-    ) -> Result<Self, BuildCircuitError> {
+    pub fn new(config: &AllocIntConfig<G, C, N>) -> Result<Self, BuildCircuitError> {
+        let mut config = config.clone();
+        let new_ref = &mut config.c_ref;
         let mut val_le = Vec::new();
         for _ in 0..N {
-            val_le.push(c_ref.input()?);
+            val_le.push(new_ref.input()?);
+        }
+        Ok(Self { val_le, config })
+    }
+
+    pub fn from_gate_ids(
+        val_le: Vec<GateId>,
+        config: &AllocIntConfig<G, C, N>,
+    ) -> Result<Self, BuildCircuitError> {
+        assert!(val_le.len() <= N);
+        let config = config.clone();
+        let mut config = config.clone();
+        let new_ref = &mut config.c_ref;
+        let mut val_le = val_le;
+        for _ in 0..(N - val_le.len()) {
+            val_le.push(new_ref.constant(false)?);
+        }
+        Ok(Self { val_le, config })
+    }
+
+    pub fn from_biguint(
+        val: &BigUint,
+        config: &AllocIntConfig<G, C, N>,
+    ) -> Result<Self, BuildCircuitError> {
+        let mut config = config.clone();
+        let new_ref = &mut config.c_ref;
+        let bytes_le = val.to_bytes_le();
+        let bits_le = bytes2bits_le(&bytes_le[..]);
+        assert_eq!(bits_le.len(), N);
+
+        let mut val_le = Vec::new();
+        for i in 0..N {
+            val_le.push(new_ref.constant(bits_le[i])?);
         }
         Ok(Self {
             val_le,
@@ -33,33 +65,15 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocInt<G, C, N> {
         Ok(())
     }
 
-    pub fn zero(
-        mut c_ref: BoolCircuitRef<G, C>,
-        config: &AllocIntConfig<G, C, N>,
-    ) -> Result<Self, BuildCircuitError> {
-        let mut val_le = Vec::new();
-        for _ in 0..N {
-            val_le.push(c_ref.constant(false)?);
-        }
-        Ok(Self {
-            val_le,
-            config: config.clone(),
-        })
+    pub fn zero(config: &AllocIntConfig<G, C, N>) -> Result<Self, BuildCircuitError> {
+        Self::from_gate_ids(vec![], config)
     }
 
-    pub fn one(
-        mut c_ref: BoolCircuitRef<G, C>,
-        config: &AllocIntConfig<G, C, N>,
-    ) -> Result<Self, BuildCircuitError> {
-        let mut val_le = Vec::new();
-        val_le.push(c_ref.constant(true)?);
-        for _ in 1..N {
-            val_le.push(c_ref.constant(false)?);
-        }
-        Ok(Self {
-            val_le,
-            config: config.clone(),
-        })
+    pub fn one(config: &AllocIntConfig<G, C, N>) -> Result<Self, BuildCircuitError> {
+        let mut config = config.clone();
+        let new_ref = &mut config.c_ref;
+        let true_bit = new_ref.constant(true)?;
+        Self::from_gate_ids(vec![true_bit], &config)
     }
 
     pub fn eq(&self, other: &Self) -> Result<GateId, BuildCircuitError> {
@@ -109,70 +123,49 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocInt<G, C, N> {
         let larger_or_eq_bit = new_ref.module(&self.config.larger_or_eq_mid, &inputs)?[0];
         Ok(larger_or_eq_bit)
     }
-}
 
-/*impl<G: Gate, C: BoolCircuit<G>,const N:usize> Add<AllocInt<G,C,N>> for AllocInt<G,C,N> {
-    type Output = AllocInt<G,C,N>;
-    fn add(self, other:AllocInt<G,C,N>) -> Self::Output {
-        (&self) + (&other)
+    pub fn shift_left(&self, shift_bits: usize) -> Result<Self, BuildCircuitError> {
+        let mut config = self.config.clone();
+        let new_ref = &mut config.c_ref;
+        let mut new_val_le = Vec::new();
+        for _ in 0..shift_bits {
+            new_val_le.push(new_ref.constant(false)?);
+        }
+        for i in shift_bits..N {
+            new_val_le.push(self.val_le[i - shift_bits]);
+        }
+        let new_int = Self {
+            val_le: new_val_le,
+            config,
+        };
+        Ok(new_int)
+    }
+
+    pub fn shift_right(&self, shift_bits: usize) -> Result<Self, BuildCircuitError> {
+        let config = self.config.clone();
+        let mut new_val_le = Vec::new();
+        let sign_bit = self.val_le[N - 1];
+        for i in 0..(N - shift_bits) {
+            new_val_le.push(self.val_le[i + shift_bits]);
+        }
+        for _ in (N - shift_bits)..N {
+            new_val_le.push(sign_bit);
+        }
+        let new_int = Self {
+            val_le: new_val_le,
+            config,
+        };
+        Ok(new_int)
     }
 }
 
-impl<G: Gate, C: BoolCircuit<G>,const N:usize> Sub<AllocInt<G,C,N>> for AllocInt<G,C,N> {
-    type Output = AllocInt<G,C,N>;
-    fn sub(self, other:AllocInt<G,C,N>) -> Self::Output {
-        (&self) - (&other)
+impl<'a, G: Gate, C: BoolCircuit<G>, const N: usize> Neg for &'a AllocInt<G, C, N> {
+    type Output = AllocInt<G, C, N>;
+    fn neg(self) -> Self::Output {
+        let zero = AllocInt::zero(&self.config).expect("Alloc Neg Error");
+        &zero - self
     }
 }
-
-impl<G: Gate, C: BoolCircuit<G>,const N:usize> Mul<AllocInt<G,C,N>> for AllocInt<G,C,N> {
-    type Output = AllocInt<G,C,N>;
-    fn mul(self, other:AllocInt<G,C,N>) -> Self::Output {
-        (&self) * (&other)
-    }
-}
-
-impl<'a, G: Gate, C: BoolCircuit<G>,const N:usize> Add<&'a AllocInt<G,C,N>> for AllocInt<G,C,N> {
-    type Output = AllocInt<G,C,N>;
-    fn add(self, other:&'a AllocInt<G,C,N>) -> Self::Output {
-        (&self) + (other)
-    }
-}
-
-impl<'a, G: Gate, C: BoolCircuit<G>,const N:usize> Sub<&'a AllocInt<G,C,N>> for AllocInt<G,C,N> {
-    type Output = AllocInt<G,C,N>;
-    fn sub(self, other:&'a AllocInt<G,C,N>) -> Self::Output {
-        (&self) - (other)
-    }
-}
-
-impl<'a, G: Gate, C: BoolCircuit<G>,const N:usize> Mul<&'a AllocInt<G,C,N>> for AllocInt<G,C,N> {
-    type Output = AllocInt<G,C,N>;
-    fn mul(self, other:&'a AllocInt<G,C,N>) -> Self::Output {
-        (&self) * (other)
-    }
-}
-
-impl<'a, G: Gate, C: BoolCircuit<G>,const N:usize> Add<AllocInt<G,C,N>> for &'a AllocInt<G,C,N> {
-    type Output = AllocInt<G,C,N>;
-    fn add(self, other:AllocInt<G,C,N>) -> Self::Output {
-        (self) + (&other)
-    }
-}
-
-impl<'a, G: Gate, C: BoolCircuit<G>,const N:usize> Sub<AllocInt<G,C,N>> for &'a AllocInt<G,C,N> {
-    type Output = AllocInt<G,C,N>;
-    fn sub(self, other: AllocInt<G,C,N>) -> Self::Output {
-        (self) - (&other)
-    }
-}
-
-impl<'a, G: Gate, C: BoolCircuit<G>,const N:usize> Mul<AllocInt<G,C,N>> for &'a AllocInt<G,C,N> {
-    type Output = AllocInt<G,C,N>;
-    fn mul(self, other:AllocInt<G,C,N>) -> Self::Output {
-        (self) * (&other)
-    }
-}*/
 
 impl<'a, 'b, G: Gate, C: BoolCircuit<G>, const N: usize> Add<&'b AllocInt<G, C, N>>
     for &'a AllocInt<G, C, N>
@@ -672,9 +665,9 @@ mod test {
         let circuit = NXAOBoolCircuit::new();
         let mut c_ref = circuit.to_ref();
         let config = AllocIntConfig::new(&c_ref).unwrap();
-        let int1 = AllocInt::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
-        let int2 = AllocInt::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
-        let int3 = AllocInt::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
+        let int1 = AllocInt::<_, _, 256>::new(&config).unwrap();
+        let int2 = AllocInt::<_, _, 256>::new(&config).unwrap();
+        let int3 = AllocInt::<_, _, 256>::new(&config).unwrap();
         let out1 = &(&int1 - &int2) * &int3;
         let out2 = &(&int1 * &int3) - &(&int2 * &int3);
         let eq = out1.eq(&out2).unwrap();
@@ -695,8 +688,8 @@ mod test {
         let circuit = NXAOBoolCircuit::new();
         let mut c_ref = circuit.to_ref();
         let config = AllocIntConfig::new(&c_ref).unwrap();
-        let int1 = AllocInt::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
-        let one = AllocInt::<_, _, 256>::one(c_ref.clone(), &config).unwrap();
+        let int1 = AllocInt::<_, _, 256>::new(&config).unwrap();
+        let one = AllocInt::<_, _, 256>::one(&config).unwrap();
         let int2 = (&int1) + (&one);
         let is_less = int1.less(&int2).unwrap();
         let is_not_less = int2.less(&int1).unwrap();
@@ -719,8 +712,8 @@ mod test {
         let circuit = NXAOBoolCircuit::new();
         let mut c_ref = circuit.to_ref();
         let config = AllocIntConfig::new(&c_ref).unwrap();
-        let int1 = AllocInt::<_, _, 256>::new(c_ref.clone(), &config).unwrap();
-        let one = AllocInt::<_, _, 256>::one(c_ref.clone(), &config).unwrap();
+        let int1 = AllocInt::<_, _, 256>::new(&config).unwrap();
+        let one = AllocInt::<_, _, 256>::one(&config).unwrap();
         let int2 = (&int1) - (&one);
         let is_larger = int1.larger(&int2).unwrap();
         let is_not_larger = int2.larger(&int1).unwrap();
