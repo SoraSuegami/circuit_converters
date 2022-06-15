@@ -45,11 +45,14 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocInt<G, C, N> {
         let new_ref = &mut config.c_ref;
         let bytes_le = val.to_bytes_le();
         let bits_le = bytes2bits_le(&bytes_le[..]);
-        assert_eq!(bits_le.len(), N);
+        assert!(bits_le.len() <= N);
 
         let mut val_le = Vec::new();
-        for i in 0..N {
+        for i in 0..bits_le.len() {
             val_le.push(new_ref.constant(bits_le[i])?);
+        }
+        for _ in 0..(N-bits_le.len()) {
+            val_le.push(new_ref.constant(false)?);
         }
         Ok(Self {
             val_le,
