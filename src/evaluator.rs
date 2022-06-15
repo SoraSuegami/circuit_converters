@@ -16,7 +16,7 @@ pub enum EvaluatorError {
 }
 
 pub trait BoolEvaluator<G: Gate, C: BoolCircuit<G>> {
-    fn circuit(&self) -> &C;
+    fn circuit(&self) -> &BoolCircuitRef<G, C>;
     fn eval_output(&mut self, inputs: &[bool]) -> Result<Vec<bool>, EvaluatorError>;
 }
 
@@ -25,9 +25,7 @@ pub struct NXAOBoolEvaluator {
     pub circuit: BoolCircuitRef<NXAOBoolGate, NXAOBoolCircuit>,
 }
 
-impl BoolEvaluator<NXAOBoolGate, BoolCircuitRef<NXAOBoolGate, NXAOBoolCircuit>>
-    for NXAOBoolEvaluator
-{
+impl BoolEvaluator<NXAOBoolGate, NXAOBoolCircuit> for NXAOBoolEvaluator {
     fn circuit(&self) -> &BoolCircuitRef<NXAOBoolGate, NXAOBoolCircuit> {
         &self.circuit
     }
@@ -195,7 +193,7 @@ impl NXAOBoolEvaluator {
                 }
                 //println!("module input bits {:?}",input_bits);
                 let module_circuit = self.circuit.get_module(&gate.module_id)?;
-                let mut evaluator = Self::new(module_circuit.to_ref());
+                let mut evaluator = Self::new(module_circuit);
                 let output_bits = evaluator.eval_output(&input_bits)?;
                 let first_output_id = GateId(gate_id.0 - (gate.out_index as u64));
                 for i in 0..gate.output_len() {
@@ -214,7 +212,7 @@ mod test {
 
     #[test]
     fn input1_output1() {
-        let mut circuit = NXAOBoolCircuit::new();
+        let mut circuit = NXAOBoolCircuit::new(ModuleStorageRef::new());
         let input_gate_id = circuit.input().unwrap();
         circuit.output(input_gate_id).unwrap();
         let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
@@ -230,7 +228,7 @@ mod test {
 
     #[test]
     fn input1_not_ouput1() {
-        let mut circuit = NXAOBoolCircuit::new();
+        let mut circuit = NXAOBoolCircuit::new(ModuleStorageRef::new());
         let input_gate_id = circuit.input().unwrap();
         let not_gate_id = circuit.not(&input_gate_id).unwrap();
         circuit.output(not_gate_id).unwrap();
@@ -247,7 +245,7 @@ mod test {
 
     #[test]
     fn input_xor_output1() {
-        let mut circuit = NXAOBoolCircuit::new();
+        let mut circuit = NXAOBoolCircuit::new(ModuleStorageRef::new());
         let input_gate_id1 = circuit.input().unwrap();
         let input_gate_id2 = circuit.input().unwrap();
         let or_gate_id = circuit.xor(&input_gate_id1, &input_gate_id2).unwrap();
@@ -273,7 +271,7 @@ mod test {
 
     #[test]
     fn input2_and_output1() {
-        let mut circuit = NXAOBoolCircuit::new();
+        let mut circuit = NXAOBoolCircuit::new(ModuleStorageRef::new());
         let input_gate_id1 = circuit.input().unwrap();
         let input_gate_id2 = circuit.input().unwrap();
         let and_gate_id = circuit.and(&input_gate_id1, &input_gate_id2).unwrap();
@@ -299,7 +297,7 @@ mod test {
 
     #[test]
     fn input2_or_output1() {
-        let mut circuit = NXAOBoolCircuit::new();
+        let mut circuit = NXAOBoolCircuit::new(ModuleStorageRef::new());
         let input_gate_id1 = circuit.input().unwrap();
         let input_gate_id2 = circuit.input().unwrap();
         let or_gate_id = circuit.or(&input_gate_id1, &input_gate_id2).unwrap();
@@ -325,7 +323,7 @@ mod test {
 
     #[test]
     fn input3_and_or_output1() {
-        let mut circuit = NXAOBoolCircuit::new();
+        let mut circuit = NXAOBoolCircuit::new(ModuleStorageRef::new());
         let input_gate_id1 = circuit.input().unwrap();
         let input_gate_id2 = circuit.input().unwrap();
         let input_gate_id3 = circuit.input().unwrap();
@@ -369,10 +367,10 @@ mod test {
 
     #[test]
     fn module_1() {
-        let mut circuit = NXAOBoolCircuit::new();
+        let mut circuit = NXAOBoolCircuit::new(ModuleStorageRef::new());
         let input_gate_id1 = circuit.input().unwrap();
         let input_gate_id2 = circuit.input().unwrap();
-        let mut eq_circuit = NXAOBoolCircuit::new();
+        let mut eq_circuit = NXAOBoolCircuit::new(ModuleStorageRef::new());
         let eq_input_gate_id1 = eq_circuit.input().unwrap();
         let eq_input_gate_id2 = eq_circuit.input().unwrap();
         let eq_xor = eq_circuit
@@ -380,7 +378,7 @@ mod test {
             .unwrap();
         let eq_not = eq_circuit.not(&eq_xor).unwrap();
         eq_circuit.output(eq_not).unwrap();
-        let eq_module_id = circuit.register_module(eq_circuit);
+        let eq_module_id = circuit.register_module(&eq_circuit.to_ref());
         let call_inputs = [input_gate_id1, input_gate_id2];
         let eq_call = circuit.module(&eq_module_id, &call_inputs).unwrap();
         circuit.output(eq_call[0]).unwrap();
@@ -409,8 +407,9 @@ mod test {
 
     #[test]
     fn bristol_adder64() {
-        let circuit: NXAOBoolCircuit = build_adder64().unwrap();
-        let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
+        let mut circuit = NXAOBoolCircuit::new(ModuleStorageRef::new()).to_ref();
+        build_adder64(&mut circuit).unwrap();
+        let mut evaluator = NXAOBoolEvaluator::new(circuit);
         let mut rng = rand::thread_rng();
 
         let input_l: [bool; 64] = [rng.gen(); 64];
@@ -426,8 +425,9 @@ mod test {
 
     #[test]
     fn bristol_neg64() {
-        let circuit: NXAOBoolCircuit = build_neg64().unwrap();
-        let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
+        let mut circuit = NXAOBoolCircuit::new(ModuleStorageRef::new()).to_ref();
+        build_neg64(&mut circuit).unwrap();
+        let mut evaluator = NXAOBoolEvaluator::new(circuit);
         let mut rng = rand::thread_rng();
 
         let input: [bool; 64] = [rng.gen(); 64];
@@ -440,8 +440,9 @@ mod test {
 
     #[test]
     fn bristol_mult2_64() {
-        let circuit: NXAOBoolCircuit = build_mult2_64().unwrap();
-        let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
+        let mut circuit = NXAOBoolCircuit::new(ModuleStorageRef::new()).to_ref();
+        build_mult2_64(&mut circuit).unwrap();
+        let mut evaluator = NXAOBoolEvaluator::new(circuit);
         let mut rng = rand::thread_rng();
 
         let input_l: [bool; 64] = [rng.gen(); 64];
@@ -454,10 +455,6 @@ mod test {
             assert_eq!(output1[i], output2[i]);
         }
     }
-
-    use crate::utils::*;
-    use hex;
-    use sha2::{Digest, Sha256};
 
     /*const INIT_SHA256_STATE: [u32; 8] = [
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
@@ -558,12 +555,13 @@ mod test {
 
     #[test]
     fn aes128() {
-        let circuit: NXAOBoolCircuit = build_aes128().unwrap();
-        let mut evaluator = NXAOBoolEvaluator::new(circuit.to_ref());
+        let mut circuit = NXAOBoolCircuit::new(ModuleStorageRef::new()).to_ref();
+        build_aes128(&mut circuit).unwrap();
+        let mut evaluator = NXAOBoolEvaluator::new(circuit);
         let mut rng = rand::thread_rng();
         let key: [bool; 128] = [rng.gen(); 128];
         let msg: [bool; 128] = [rng.gen(); 128];
         let enc_input = [key, msg].concat();
-        let enc_output = evaluator.eval_output(&enc_input).unwrap();
+        let _ = evaluator.eval_output(&enc_input).unwrap();
     }
 }

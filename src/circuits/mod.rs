@@ -19,12 +19,14 @@ pub enum BuildCircuitError {
 
 macro_rules! build_circuit_from_bristol {
     ($name:ident,$path:literal) => {
-        pub fn $name<G: Gate, C: BoolCircuit<G>>() -> Result<C, BuildCircuitError> {
+        pub fn $name<G: Gate, C: BoolCircuit<G>>(
+            c_ref: &mut BoolCircuitRef<G, C>,
+        ) -> Result<(), BuildCircuitError> {
             let mut reader = BristolReader::<G, C>::new();
             let textfile = include_str!($path).to_string();
             let buf_read = BufReader::new(textfile.as_bytes());
-            let circuit = reader.read(buf_read)?;
-            Ok(circuit)
+            reader.read(buf_read, c_ref)?;
+            Ok(())
         }
     };
 }

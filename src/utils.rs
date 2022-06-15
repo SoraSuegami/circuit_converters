@@ -1,7 +1,7 @@
 pub use hex::FromHexError;
 use hex::{decode, encode};
 use num_bigint::BigInt;
-use num_traits::{FromPrimitive, Zero};
+use num_traits::Zero;
 
 pub fn bits2bytes_le(bits: &[bool]) -> Vec<u8> {
     bits.chunks(8)
@@ -72,7 +72,6 @@ pub fn ext_gcd(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
 mod test {
     use super::*;
     use rand::Rng;
-    use rayon::result;
 
     #[test]
     fn le_convert_test() {

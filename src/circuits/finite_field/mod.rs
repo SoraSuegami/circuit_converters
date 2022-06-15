@@ -175,29 +175,28 @@ pub struct AllocFpConfig<G: Gate, C: BoolCircuit<G>, const N: usize> {
     pub add_mid: ModuleId,
     pub sub_mid: ModuleId,
     pub mul_mid: ModuleId,
+    pub mont_red_mid: ModuleId
 }
 
 impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocFpConfig<G, C, N> {
     pub fn new(
         c_ref: &BoolCircuitRef<G, C>,
+        int_config: &AllocIntConfig<G, C, N>,
         p: BigUint,
         r_exp: usize,
     ) -> Result<Self, BuildCircuitError> {
+        let mut c_ref = c_ref.clone();
         let r = BigUint::from(1u32) << r_exp;
         let r2 = ((&r) * (&r)) % (&r);
         let p_inv = Self::mod_inv(p.clone(), r.clone());
         let p_minus_inv = (&r) - (&p_inv);
-        let mut c_ref = c_ref.clone();
-        let int_config = AllocIntConfig::new(&c_ref)?;
-        let adder = Self::build_add_circuit(&p)?;
-        let add_mid = c_ref.register_module(adder);
-        let suber = Self::build_sub_circuit(&p)?;
-        let sub_mid = c_ref.register_module(suber);
-        let muler = Self::build_mul_circuit(&p, &p_minus_inv, &r2, r_exp)?;
-        let mul_mid = c_ref.register_module(muler);
+        let add_mid = Self::build_add_circuit(&mut c_ref,int_config,&p)?;
+        let sub_mid = Self::build_sub_circuit(&mut c_ref,int_config,add_mid)?;
+        let mont_red_mid = Self::build_mont_red(&mut c_ref, int_config, &p, &p_minus_inv, r_exp)?;
+        let mul_mid = Self::build_mul_circuit(&mut c_ref, int_config, &r2, mont_red_mid)?;
         Ok(Self {
             c_ref,
-            int_config,
+            int_config: int_config.clone(),
             p,
             p_minus_inv,
             r_exp,
@@ -205,13 +204,14 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocFpConfig<G, C, N> {
             add_mid,
             sub_mid,
             mul_mid,
+            mont_red_mid
         })
     }
 
-    fn build_add_circuit(p: &BigUint) -> Result<BoolCircuitRef<G, C>, BuildCircuitError> {
-        let circuit = C::new();
-        let mut c_ref = circuit.to_ref();
-        let int_config = AllocIntConfig::<G, C, N>::new(&c_ref)?;
+    fn build_add_circuit(c_ref:&mut BoolCircuitRef<G,C>, int_config: &AllocIntConfig<G,C,N>, p: &BigUint) -> Result<ModuleId, BuildCircuitError> {
+        let (mid, mut sub_ref) = c_ref.sub_circuit();
+        let mut int_config = int_config.clone();
+        int_config.c_ref = sub_ref.clone();
         let l = AllocInt::new(&int_config)?;
         let r = AllocInt::new(&int_config)?;
 
@@ -222,98 +222,84 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocFpConfig<G, C, N> {
         let is_plus_larger_int = AllocInt::from_gate_ids(vec![is_plus_larger], &int_config)?;
         let is_minus_less = sum.less(&(-&AllocInt::zero(&int_config)?))?;
         let is_minus_less_int = AllocInt::from_gate_ids(vec![is_minus_less], &int_config)?;
-        let else_bit = c_ref.or(&is_plus_larger, &is_minus_less)?;
-        let else_bit = c_ref.not(&else_bit)?;
+        let else_bit = sub_ref.or(&is_plus_larger, &is_minus_less)?;
+        let else_bit = sub_ref.not(&else_bit)?;
         let else_int = AllocInt::from_gate_ids(vec![else_bit], &int_config)?;
 
         let out = &((&is_plus_larger_int) * &(&sum - &p_int))
             + &((&is_minus_less_int) * &(&sum + &p_int));
         let out = &out + &(&else_int * &sum);
         out.output()?;
-        Ok(c_ref)
+        Ok(mid)
     }
 
-    fn build_sub_circuit(p: &BigUint) -> Result<BoolCircuitRef<G, C>, BuildCircuitError> {
-        let circuit = C::new();
-        let mut c_ref = circuit.to_ref();
-        let adder = Self::build_add_circuit(p)?;
-        let add_mid = c_ref.register_module(adder);
-        let int_config = AllocIntConfig::<G, C, N>::new(&c_ref)?;
+    fn build_sub_circuit(c_ref: &mut BoolCircuitRef<G, C>, int_config: &AllocIntConfig<G,C,N>, add_mid:ModuleId) -> Result<ModuleId, BuildCircuitError> {
+        let (mid, mut sub_ref) = c_ref.sub_circuit();
+        let mut int_config = int_config.clone();
+        int_config.c_ref = sub_ref.clone();
         let l = AllocInt::new(&int_config)?;
         let r = AllocInt::new(&int_config)?;
 
         let r = -&r;
         let inputs = [l.val_le, r.val_le].concat();
-        let output = c_ref.module(&add_mid, &inputs)?;
-        for i in 0..N {
-            c_ref.output(output[i])?;
-        }
-        Ok(c_ref)
+        let out = AllocInt::from_gate_ids(sub_ref.module(&add_mid, &inputs)?,&int_config)?;
+        out.output()?;
+        Ok(mid)
     }
 
     fn build_mul_circuit(
-        p: &BigUint,
-        p_minus_inv: &BigUint,
+        c_ref: &mut BoolCircuitRef<G, C>,
+        int_config: &AllocIntConfig<G, C, N>,
         r2: &BigUint,
-        r_exp: usize,
-    ) -> Result<BoolCircuitRef<G, C>, BuildCircuitError> {
-        let circuit = C::new();
-        let mut c_ref = circuit.to_ref();
-        let int_config = AllocIntConfig::<G, C, N>::new(&c_ref)?;
+        mont_red_mid:ModuleId
+    ) -> Result<ModuleId, BuildCircuitError> {
+        let (mid, mut sub_ref) = c_ref.sub_circuit();
+        let mut int_config = int_config.clone();
+        int_config.c_ref = sub_ref.clone();
         let l = AllocInt::new(&int_config)?;
         let r = AllocInt::new(&int_config)?;
         let lr = (&l) * (&r);
-        let p_int = AllocInt::from_biguint(p, &int_config)?;
-        let p_minus_inv_int = AllocInt::from_biguint(p_minus_inv, &int_config)?;
-        let lr_mod = Self::mont_red(
-            &lr,
-            &mut c_ref,
-            &int_config,
-            &p_int,
-            &p_minus_inv_int,
-            r_exp,
-        )?;
+        let lr_mod = AllocInt::from_gate_ids(sub_ref.module(&mont_red_mid,&lr.val_le)?, &int_config)?;
         let r2_int = AllocInt::from_biguint(r2, &int_config)?;
         let lr_mod_r2 = (&lr_mod) * (&r2_int);
-        let out = Self::mont_red(
-            &lr_mod_r2,
-            &mut c_ref,
-            &int_config,
-            &p_int,
-            &p_minus_inv_int,
-            r_exp,
-        )?;
+        let out = AllocInt::from_gate_ids(sub_ref.module(&mont_red_mid, &lr_mod_r2.val_le)?, &int_config)?;
         out.output()?;
-        Ok(c_ref)
+        Ok(mid)
     }
 
-    fn mont_red(
-        val: &AllocInt<G, C, N>,
+    fn build_mont_red(
         c_ref: &mut BoolCircuitRef<G, C>,
         int_config: &AllocIntConfig<G, C, N>,
-        p_int: &AllocInt<G, C, N>,
-        p_minus_inv_int: &AllocInt<G, C, N>,
+        p: &BigUint,
+        p_minus_inv: &BigUint,
         r_exp: usize,
-    ) -> Result<AllocInt<G, C, N>, BuildCircuitError> {
+    ) -> Result<ModuleId, BuildCircuitError> {
+        let (mid, mut sub_ref) = c_ref.sub_circuit();
+        let mut int_config = int_config.clone();
+        int_config.c_ref = sub_ref.clone();
+        let val = AllocInt::new(&int_config)?;
+        let p_int = AllocInt::from_biguint(p, &int_config)?;
+        let p_minus_inv_int = AllocInt::from_biguint(p_minus_inv, &int_config)?;
         // val * p_minus_inv
-        let mut val_pi = val * p_minus_inv_int;
-        let false_bit = c_ref.constant(false)?;
+        let mut val_pi = (&val) * (&p_minus_inv_int);
+        let false_bit = sub_ref.constant(false)?;
         // (val * p_minus_inv) mod R
         for i in r_exp..N {
-            val_pi.val_le[i] = c_ref.and(&val_pi.val_le[i], &false_bit)?;
+            val_pi.val_le[i] = sub_ref.and(&val_pi.val_le[i], &false_bit)?;
         }
         // ((val * p_minus_inv) mod R) * p
-        let val_pi_p = (&val_pi) * p_int;
+        let val_pi_p = (&val_pi) * (&p_int);
         // val + ((val * p_minus_inv) mod R) * p
-        let val_val_pi_p = val + (&val_pi_p);
+        let val_val_pi_p = (&val) + (&val_pi_p);
         // t = (val + ((val * p_minus_inv) mod R) * p) / r
         let t = val_val_pi_p.shift_right(r_exp)?;
         let is_larger_or_eq = t.larger_or_eq(&p_int)?;
-        let is_larger_or_eq_int = AllocInt::from_gate_ids(vec![is_larger_or_eq], int_config)?;
+        let is_larger_or_eq_int = AllocInt::from_gate_ids(vec![is_larger_or_eq], &int_config)?;
         let else_int = (&AllocInt::one(&int_config)?) - (&is_larger_or_eq_int);
-        let p_subed_t = (&t) - p_int;
+        let p_subed_t = (&t) - (&p_int);
         let out = &(&is_larger_or_eq_int * &p_subed_t) - &(&else_int * &t);
-        Ok(out)
+        out.output()?;
+        Ok(mid)
     }
 
     fn mod_inv(val:BigUint, p:BigUint) -> BigUint {
@@ -343,21 +329,26 @@ mod test {
     use rand::Rng;
 
     #[test]
-    fn fp_add() {
+    fn fp_add_sub_mul_test() {
         let p = BigUint::parse_bytes(b"11", 10).unwrap();
         const REXP:usize = 4;
         const N:usize = 2*REXP;
 
-        let circuit = NXAOBoolCircuit::new();
+        let circuit = NXAOBoolCircuit::new(ModuleStorageRef::new());
         let mut c_ref = circuit.to_ref();
-        let config = AllocFpConfig::<_,_,N>::new(&c_ref,p,REXP).unwrap();
+        let int_config = AllocIntConfig::new(&c_ref).unwrap();
+        let config = AllocFpConfig::<_,_,N>::new(&mut c_ref,&int_config,p,REXP).unwrap();
         let int1 = AllocFp::<_, _, N>::new(&config).unwrap();
         let int2 = AllocFp::<_, _, N>::new(&config).unwrap();
         let int3 = AllocFp::<_, _, N>::new(&config).unwrap();
-        let out1 = &(&int1 - &int2) * &int3;
-        let out2 = &(&int1 * &int3) - &(&int2 * &int3);
-        let eq = out1.eq(&out2).unwrap();
-        c_ref.output(eq).unwrap();
+        let out1 = &(&int1 + &int2) * &int3;
+        let out2 = &(&int1 * &int3) + &(&int2 * &int3);
+        let out3 = &(&int1 - &int2) * &int3;
+        let out4 = &(&int1 * &int3) - &(&int2 * &int3);
+        let eq1 = out1.eq(&out2).unwrap();
+        let eq2 = out3.eq(&out4).unwrap();
+        c_ref.output(eq1).unwrap();
+        c_ref.output(eq2).unwrap();
 
         let mut evaluator = NXAOBoolEvaluator::new(c_ref);
         let mut rng = rand::thread_rng();
@@ -365,7 +356,7 @@ mod test {
         for i in 0..(N * 3) {
             inputs[i] = rng.gen();
         }
-        let output = evaluator.eval_output(&inputs).unwrap()[0];
-        assert_eq!(output, true);
+        let outputs = evaluator.eval_output(&inputs).unwrap();
+        assert_eq!(outputs, vec![true,true]);
     }
 }

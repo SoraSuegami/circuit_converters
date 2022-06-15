@@ -29,19 +29,18 @@ pub enum BoolCircuitError {
     InvalidModuleInputGate,
 }
 
-pub trait BoolCircuit<G: Gate>: Sized + Clone {
-    fn new() -> Self;
-    fn to_ref(self) -> BoolCircuitRef<G, Self> {
-        BoolCircuitRef::new(self)
-    }
+pub trait BoolCircuit<G: Gate>: Sized + Clone + PartialEq + Eq {
+    //fn new() -> Self;
+    fn to_ref(self) -> BoolCircuitRef<G, Self>;
     fn input_len(&self) -> usize;
     fn output_len(&self) -> usize;
     fn num_wire(&self) -> usize;
     fn num_gate(&self) -> usize;
     fn input_to_gate_id(&self, wire_id: &WireId) -> Result<Option<GateId>, BoolCircuitError>;
     fn output_to_gate_id(&self, wire_id: &WireId) -> Result<GateId, BoolCircuitError>;
-    fn get_gate(&self, gate_id: &GateId) -> Result<NXAOBoolGate, BoolCircuitError>;
-    fn get_module(&self, module_id: &ModuleId) -> Result<NXAOBoolCircuit, BoolCircuitError>;
+    fn get_gate(&self, gate_id: &GateId) -> Result<G, BoolCircuitError>;
+    fn get_module(&self, module_id: &ModuleId)
+        -> Result<BoolCircuitRef<G, Self>, BoolCircuitError>;
     fn get_depended_gates(&self, gate_id: &GateId) -> Result<Vec<GateId>, BoolCircuitError>;
     fn input(&mut self) -> Result<GateId, BoolCircuitError>;
     fn output(&mut self, gate_id: GateId) -> Result<WireId, BoolCircuitError>;
@@ -50,26 +49,29 @@ pub trait BoolCircuit<G: Gate>: Sized + Clone {
     fn xor(&mut self, gate_l_id: &GateId, gate_r_id: &GateId) -> Result<GateId, BoolCircuitError>;
     fn and(&mut self, gate_l_id: &GateId, gate_r_id: &GateId) -> Result<GateId, BoolCircuitError>;
     fn or(&mut self, gate_l_id: &GateId, gate_r_id: &GateId) -> Result<GateId, BoolCircuitError>;
-    fn eq(&mut self, gate_l_id: &GateId, gate_r_id: &GateId) -> Result<GateId, BoolCircuitError>;
+    fn equivalent(
+        &mut self,
+        gate_l_id: &GateId,
+        gate_r_id: &GateId,
+    ) -> Result<GateId, BoolCircuitError>;
     fn identity(&mut self, gate_id: &GateId) -> Result<GateId, BoolCircuitError>;
-    fn register_module(&mut self, module_circuit: Self) -> ModuleId;
+    fn register_module(&mut self, module_circuit: &BoolCircuitRef<G, Self>) -> ModuleId;
+    fn sub_circuit(&mut self) -> (ModuleId, BoolCircuitRef<G, Self>);
     fn module(
         &mut self,
         module_id: &ModuleId,
         gate_ids: &[GateId],
     ) -> Result<Vec<GateId>, BoolCircuitError>;
     fn modify_with_const_gates(&mut self) -> Result<(), BoolCircuitError>;
-    /*fn modify_with_fixed_input_gate(&mut self, gate_id: &GateId, value: bool) -> Result<(), BoolCircuitError>;
-    fn modify_with_fixed_input(&mut self, wire_id: &WireId, value: bool) -> Result<(), BoolCircuitError>;
-    fn modify_with_constant(&mut self, gate_id: &GateId) -> Result<(), BoolCircuitError>;*/
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoolCircuitRef<G: Gate, C: BoolCircuit<G>>(Rc<RefCell<C>>, PhantomData<G>);
 
 impl<G: Gate, C: BoolCircuit<G>> BoolCircuitRef<G, C> {
     pub fn new(circuit: C) -> Self {
-        Self(Rc::new(RefCell::new(circuit)), PhantomData)
+        let ref_c = RefCell::new(circuit);
+        Self(Rc::new(ref_c), PhantomData)
     }
 
     pub fn clone(&self) -> Self {
@@ -84,17 +86,121 @@ impl<G: Gate, C: BoolCircuit<G>> BoolCircuitRef<G, C> {
         (*self.0).borrow_mut()
     }
 
+    pub fn input_len(&self) -> usize {
+        self.borrow().input_len()
+    }
+
+    pub fn output_len(&self) -> usize {
+        self.borrow().output_len()
+    }
+
+    pub fn num_wire(&self) -> usize {
+        self.borrow().num_wire()
+    }
+
+    pub fn num_gate(&self) -> usize {
+        self.borrow().num_gate()
+    }
+
+    pub fn input_to_gate_id(&self, wire_id: &WireId) -> Result<Option<GateId>, BoolCircuitError> {
+        self.borrow().input_to_gate_id(wire_id)
+    }
+
+    pub fn output_to_gate_id(&self, wire_id: &WireId) -> Result<GateId, BoolCircuitError> {
+        self.borrow().output_to_gate_id(wire_id)
+    }
+
+    pub fn get_gate(&self, gate_id: &GateId) -> Result<G, BoolCircuitError> {
+        self.borrow().get_gate(gate_id)
+    }
+
+    pub fn get_module(&self, module_id: &ModuleId) -> Result<Self, BoolCircuitError> {
+        self.borrow().get_module(module_id)
+    }
+
+    pub fn get_depended_gates(&self, gate_id: &GateId) -> Result<Vec<GateId>, BoolCircuitError> {
+        self.borrow().get_depended_gates(gate_id)
+    }
+
+    pub fn input(&mut self) -> Result<GateId, BoolCircuitError> {
+        self.borrow_mut().input()
+    }
+
+    pub fn output(&mut self, gate_id: GateId) -> Result<WireId, BoolCircuitError> {
+        self.borrow_mut().output(gate_id)
+    }
+
+    pub fn constant(&mut self, value: bool) -> Result<GateId, BoolCircuitError> {
+        self.borrow_mut().constant(value)
+    }
+
+    pub fn not(&mut self, gate_id: &GateId) -> Result<GateId, BoolCircuitError> {
+        self.borrow_mut().not(gate_id)
+    }
+
+    pub fn xor(
+        &mut self,
+        gate_l_id: &GateId,
+        gate_r_id: &GateId,
+    ) -> Result<GateId, BoolCircuitError> {
+        self.borrow_mut().xor(gate_l_id, gate_r_id)
+    }
+
+    pub fn and(
+        &mut self,
+        gate_l_id: &GateId,
+        gate_r_id: &GateId,
+    ) -> Result<GateId, BoolCircuitError> {
+        self.borrow_mut().and(gate_l_id, gate_r_id)
+    }
+
+    pub fn or(
+        &mut self,
+        gate_l_id: &GateId,
+        gate_r_id: &GateId,
+    ) -> Result<GateId, BoolCircuitError> {
+        self.borrow_mut().or(gate_l_id, gate_r_id)
+    }
+
+    pub fn equivalent(
+        &mut self,
+        gate_l_id: &GateId,
+        gate_r_id: &GateId,
+    ) -> Result<GateId, BoolCircuitError> {
+        self.borrow_mut().equivalent(gate_l_id, gate_r_id)
+    }
+
+    pub fn identity(&mut self, gate_id: &GateId) -> Result<GateId, BoolCircuitError> {
+        self.borrow_mut().identity(gate_id)
+    }
+
+    pub fn register_module(&mut self, module_circuit: &Self) -> ModuleId {
+        self.borrow_mut().register_module(module_circuit)
+    }
+
+    pub fn sub_circuit(&mut self) -> (ModuleId, Self) {
+        self.borrow_mut().sub_circuit()
+    }
+
+    pub fn module(
+        &mut self,
+        module_id: &ModuleId,
+        gate_ids: &[GateId],
+    ) -> Result<Vec<GateId>, BoolCircuitError> {
+        self.borrow_mut().module(module_id, gate_ids)
+    }
+
+    pub fn modify_with_const_gates(&mut self) -> Result<(), BoolCircuitError> {
+        self.borrow_mut().modify_with_const_gates()
+    }
+
     fn inner(&self) -> &Rc<RefCell<C>> {
         &self.0
     }
 }
 
+/*
 impl<G: Gate, C: BoolCircuit<G>> BoolCircuit<G> for BoolCircuitRef<G, C> {
-    fn new() -> Self {
-        let c = C::new();
-        Self::new(c)
-    }
-
     fn input_len(&self) -> usize {
         self.borrow().input_len()
     }
@@ -123,7 +229,7 @@ impl<G: Gate, C: BoolCircuit<G>> BoolCircuit<G> for BoolCircuitRef<G, C> {
         self.borrow().get_gate(gate_id)
     }
 
-    fn get_module(&self, module_id: &ModuleId) -> Result<NXAOBoolCircuit, BoolCircuitError> {
+    fn get_module(&self, module_id: &ModuleId) -> Result<BoolCircuitRef<G,Self>, BoolCircuitError> {
         self.borrow().get_module(module_id)
     }
 
@@ -172,6 +278,10 @@ impl<G: Gate, C: BoolCircuit<G>> BoolCircuit<G> for BoolCircuitRef<G, C> {
         self.borrow_mut().register_module(module_c)
     }
 
+    fn sub_circuit(&mut self) -> (ModuleId, BoolCircuitRef<NXAOBoolGate,Self>) {
+        self.borrow_mut().sub_circuit()
+    }
+
     fn module(
         &mut self,
         module_id: &ModuleId,
@@ -184,39 +294,108 @@ impl<G: Gate, C: BoolCircuit<G>> BoolCircuit<G> for BoolCircuitRef<G, C> {
         self.borrow_mut().modify_with_const_gates()
     }
 }
+*/
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
+pub struct ModuleStorageRef<G: Gate, C: BoolCircuit<G>>(Rc<RefCell<ModuleStorage<G, C>>>);
+
+impl<G: Gate, C: BoolCircuit<G>> ModuleStorageRef<G, C> {
+    pub fn new() -> Self {
+        Self(Rc::new(RefCell::new(ModuleStorage::<G, C>::new())))
+    }
+
+    pub fn clone(&self) -> Self {
+        Self(Rc::clone(self.inner()))
+    }
+
+    pub fn borrow(&self) -> Ref<ModuleStorage<G, C>> {
+        self.inner().borrow()
+    }
+
+    pub fn borrow_mut(&self) -> RefMut<'_, ModuleStorage<G, C>> {
+        (*self.0).borrow_mut()
+    }
+
+    pub fn get_module(
+        &self,
+        module_id: &ModuleId,
+    ) -> Result<BoolCircuitRef<G, C>, BoolCircuitError> {
+        self.borrow().get_module(module_id)
+    }
+
+    pub fn register_module(&mut self, module_circuit: &BoolCircuitRef<G, C>) -> ModuleId {
+        self.borrow_mut().register_module(module_circuit)
+    }
+
+    pub fn num_module(&self) -> usize {
+        self.borrow().num_module()
+    }
+
+    fn inner(&self) -> &Rc<RefCell<ModuleStorage<G, C>>> {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ModuleStorage<G: Gate, C: BoolCircuit<G>> {
+    pub module_map: HashMap<ModuleId, BoolCircuitRef<G, C>>,
+    pub num_module: usize,
+    _g: PhantomData<G>,
+}
+
+impl<G: Gate, C: BoolCircuit<G>> ModuleStorage<G, C> {
+    pub fn new() -> Self {
+        let module_map = HashMap::new();
+        let num_module = 0;
+        Self {
+            module_map,
+            num_module,
+            _g: PhantomData,
+        }
+    }
+
+    pub fn get_module(
+        &self,
+        module_id: &ModuleId,
+    ) -> Result<BoolCircuitRef<G, C>, BoolCircuitError> {
+        self.module_map
+            .get(module_id)
+            .ok_or(BoolCircuitError::UnknownModule(*module_id))
+            .and_then(|c| Ok(c.clone()))
+    }
+
+    pub fn register_module(&mut self, module_circuit: &BoolCircuitRef<G, C>) -> ModuleId {
+        let module_id = ModuleId(self.num_module as u64);
+        self.module_map.insert(module_id, module_circuit.clone());
+        self.num_module += 1;
+        module_id
+    }
+
+    pub fn num_module(&self) -> usize {
+        self.num_module
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct NXAOBoolCircuit {
     pub input_map: HashMap<WireId, Option<GateId>>,
     pub output_map: HashMap<WireId, GateId>,
     pub gate_map: HashMap<GateId, NXAOBoolGate>,
-    pub module_map: HashMap<ModuleId, Self>,
+    pub module_storage: ModuleStorageRef<NXAOBoolGate, Self>,
+    //pub module_map: HashMap<ModuleId, Self>,
     pub gate_dependence_map: HashMap<GateId, Vec<GateId>>,
     pub const_gates: Vec<GateId>,
     pub input_len: usize,
     pub output_len: usize,
-    pub num_module: usize,
+    //pub num_module: usize,
     pub num_wire: usize,
     pub num_gate: usize,
     pub gate_index: usize,
 }
 
 impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
-    fn new() -> Self {
-        Self {
-            input_map: HashMap::new(),
-            output_map: HashMap::new(),
-            gate_map: HashMap::new(),
-            module_map: HashMap::new(),
-            gate_dependence_map: HashMap::new(),
-            const_gates: Vec::new(),
-            input_len: 0,
-            output_len: 0,
-            num_module: 0,
-            num_wire: 0,
-            num_gate: 0,
-            gate_index: 0,
-        }
+    fn to_ref(self) -> BoolCircuitRef<NXAOBoolGate, Self> {
+        BoolCircuitRef::new(self)
     }
 
     fn input_len(&self) -> usize {
@@ -234,24 +413,6 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
     fn num_gate(&self) -> usize {
         self.num_gate
     }
-
-    /*fn depth_whole(&self) -> Result<usize, BoolCircuitError> {
-        let mut max: usize = 0;
-        for i in 0..self.output_len {
-            let wire_id = WireId(i as u64);
-            let depth = self.depth_of_output(&wire_id)?;
-            if depth > max {
-                max = depth;
-            }
-        }
-        Ok(max)
-    }
-
-    fn depth_of_output(&self, output_wire_id: &WireId) -> Result<usize, BoolCircuitError> {
-        let output_id = self.output_to_gate_id(output_wire_id)?;
-        let gate: &NXAOBoolGate = self.get_gate(&output_id)?;
-        Ok(gate.depth())
-    }*/
 
     fn input_to_gate_id(&self, wire_id: &WireId) -> Result<Option<GateId>, BoolCircuitError> {
         self.input_map
@@ -274,11 +435,11 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
             .and_then(|gate| Ok(gate.clone()))
     }
 
-    fn get_module(&self, module_id: &ModuleId) -> Result<NXAOBoolCircuit, BoolCircuitError> {
-        self.module_map
-            .get(module_id)
-            .ok_or(BoolCircuitError::UnknownModule(*module_id))
-            .and_then(|c| Ok(c.clone()))
+    fn get_module(
+        &self,
+        module_id: &ModuleId,
+    ) -> Result<BoolCircuitRef<NXAOBoolGate, Self>, BoolCircuitError> {
+        self.module_storage.get_module(module_id)
     }
 
     fn get_depended_gates(&self, gate_id: &GateId) -> Result<Vec<GateId>, BoolCircuitError> {
@@ -361,7 +522,11 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
         Ok(new_gate_id)
     }
 
-    fn eq(&mut self, gate_l_id: &GateId, gate_r_id: &GateId) -> Result<GateId, BoolCircuitError> {
+    fn equivalent(
+        &mut self,
+        gate_l_id: &GateId,
+        gate_r_id: &GateId,
+    ) -> Result<GateId, BoolCircuitError> {
         let xor = self.xor(gate_l_id, gate_r_id)?;
         self.not(&xor)
     }
@@ -371,11 +536,15 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
         self.not(&not1)
     }
 
-    fn register_module(&mut self, module_circuit: Self) -> ModuleId {
-        let module_id = ModuleId(self.num_module as u64);
-        self.module_map.insert(module_id, module_circuit);
-        self.num_module += 1;
-        module_id
+    fn register_module(&mut self, module_circuit: &BoolCircuitRef<NXAOBoolGate, Self>) -> ModuleId {
+        self.module_storage.register_module(module_circuit)
+    }
+
+    fn sub_circuit(&mut self) -> (ModuleId, BoolCircuitRef<NXAOBoolGate, Self>) {
+        let new_circuit = Self::new(self.module_storage.clone());
+        let new_ref = new_circuit.to_ref();
+        let module_id = self.register_module(&new_ref);
+        (module_id, new_ref)
     }
 
     fn module(
@@ -424,29 +593,42 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
         self.const_gates = Vec::new();
         Ok(())
     }
-
-    /*fn modify_with_fixed_input_gate(&mut self, gate_id: &GateId, value: bool) -> Result<(), BoolCircuitError> {
-        self.modify_gate_with_fixed_value(&gate_id, value)?;
-        self.input_len -= 1;
-        self.num_wire -= 1;
-        self.input_map.insert(*wire_id, None);
-        self.gate_dependence_map.insert(input_gate_id, Vec::new());
-        Ok(())
-    }*/
-
-    /*fn modify_with_constant(&mut self, gate_id: &GateId) -> Result<(), BoolCircuitError> {
-        let const_gate = match self.get_gate(&gate_id)? {
-            NXAOBoolGate::Const(g) => g,
-            _ => {
-                return  Err(BoolCircuitError::NotConstGate(*gate_id));
-            }
-        };
-        self.modify_gate_with_fixed_value(&gate_id, const_gate.value)?;
-        Ok(())
-    }*/
 }
 
+impl PartialEq for NXAOBoolCircuit {
+    fn eq(&self, other: &Self) -> bool {
+        self.input_map == other.input_map
+            && self.output_map == other.output_map
+            && self.gate_map == other.gate_map
+            && self.gate_dependence_map == other.gate_dependence_map
+            && self.const_gates == other.const_gates
+            && self.input_len == other.input_len
+            && self.output_len == other.output_len
+            && self.num_wire == other.num_wire
+            && self.num_gate == other.num_gate
+            && self.gate_index == other.gate_index
+    }
+}
+
+impl Eq for NXAOBoolCircuit {}
+
 impl NXAOBoolCircuit {
+    pub fn new(module_storage: ModuleStorageRef<NXAOBoolGate, Self>) -> Self {
+        Self {
+            input_map: HashMap::new(),
+            output_map: HashMap::new(),
+            gate_map: HashMap::new(),
+            module_storage,
+            gate_dependence_map: HashMap::new(),
+            const_gates: Vec::new(),
+            input_len: 0,
+            output_len: 0,
+            num_wire: 0,
+            num_gate: 0,
+            gate_index: 0,
+        }
+    }
+
     fn add_gate(&mut self, gate: NXAOBoolGate) -> GateId {
         let gate_id = GateId(self.gate_index as u64);
         self.gate_map.insert(gate_id, gate);
@@ -546,7 +728,7 @@ impl NXAOBoolCircuit {
                     }
                 }
                 NXAOBoolGate::Module(gate) => {
-                    let mut module_circuit = self.get_module(&gate.module_id)?.clone();
+                    let mut module_circuit = self.get_module(&gate.module_id)?.borrow().clone();
                     let first_output_id = GateId(gate_id.0 - (gate.out_index as u64));
                     let mut modified_input_gates = gate.input_gate_ids().clone();
                     let output_len = gate.output_len();
@@ -583,7 +765,7 @@ impl NXAOBoolCircuit {
                     module_circuit
                         .input_map
                         .insert(modified_input_wire_id, None);
-                    let modified_module_id = self.register_module(module_circuit);
+                    let modified_module_id = self.register_module(&module_circuit.to_ref());
 
                     modified_input_gates.remove(index_of_fixed_input);
                     for i in 0..output_len {
@@ -610,7 +792,7 @@ mod test {
 
     #[test]
     fn input1_output1() {
-        let mut circuit = NXAOBoolCircuit::new();
+        let mut circuit = NXAOBoolCircuit::new(ModuleStorageRef::new());
         let input_gate_id = circuit.input().unwrap();
         circuit.output(input_gate_id).unwrap();
         assert_eq!(circuit.input_len(), 1);
@@ -619,7 +801,7 @@ mod test {
 
     #[test]
     fn input1_not_ouput1() {
-        let mut circuit = NXAOBoolCircuit::new();
+        let mut circuit = NXAOBoolCircuit::new(ModuleStorageRef::new());
         let input_gate_id = circuit.input().unwrap();
         let not_gate_id = circuit.not(&input_gate_id).unwrap();
         circuit.output(not_gate_id).unwrap();
@@ -629,7 +811,7 @@ mod test {
 
     #[test]
     fn input_xor_output1() {
-        let mut circuit = NXAOBoolCircuit::new();
+        let mut circuit = NXAOBoolCircuit::new(ModuleStorageRef::new());
         let input_gate_id1 = circuit.input().unwrap();
         let input_gate_id2 = circuit.input().unwrap();
         let or_gate_id = circuit.xor(&input_gate_id1, &input_gate_id2).unwrap();
@@ -640,7 +822,7 @@ mod test {
 
     #[test]
     fn input2_and_output1() {
-        let mut circuit = NXAOBoolCircuit::new();
+        let mut circuit = NXAOBoolCircuit::new(ModuleStorageRef::new());
         let input_gate_id1 = circuit.input().unwrap();
         let input_gate_id2 = circuit.input().unwrap();
         let and_gate_id = circuit.and(&input_gate_id1, &input_gate_id2).unwrap();
@@ -651,7 +833,7 @@ mod test {
 
     #[test]
     fn input2_or_output1() {
-        let mut circuit = NXAOBoolCircuit::new();
+        let mut circuit = NXAOBoolCircuit::new(ModuleStorageRef::new());
         let input_gate_id1 = circuit.input().unwrap();
         let input_gate_id2 = circuit.input().unwrap();
         let or_gate_id = circuit.or(&input_gate_id1, &input_gate_id2).unwrap();
@@ -662,7 +844,7 @@ mod test {
 
     #[test]
     fn input3_and_or_output1() {
-        let mut circuit = NXAOBoolCircuit::new();
+        let mut circuit = NXAOBoolCircuit::new(ModuleStorageRef::new());
         let input_gate_id1 = circuit.input().unwrap();
         let input_gate_id2 = circuit.input().unwrap();
         let input_gate_id3 = circuit.input().unwrap();
