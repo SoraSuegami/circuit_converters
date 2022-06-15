@@ -10,3 +10,5 @@ pub use circuits::*;
 pub use evaluator::*;
 pub use gates::*;
 pub use utils::*;
+
+pub use num_bigint;
