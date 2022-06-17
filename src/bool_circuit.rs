@@ -36,12 +36,14 @@ pub trait BoolCircuit<G: Gate>: Sized + Clone + PartialEq + Eq {
     fn output_len(&self) -> usize;
     fn num_wire(&self) -> usize;
     fn num_gate(&self) -> usize;
+    fn num_const(&self) -> usize;
     fn input_to_gate_id(&self, wire_id: &WireId) -> Result<Option<GateId>, BoolCircuitError>;
     fn output_to_gate_id(&self, wire_id: &WireId) -> Result<GateId, BoolCircuitError>;
     fn get_gate(&self, gate_id: &GateId) -> Result<G, BoolCircuitError>;
     fn get_module(&self, module_id: &ModuleId)
         -> Result<BoolCircuitRef<G, Self>, BoolCircuitError>;
     fn get_depended_gates(&self, gate_id: &GateId) -> Result<Vec<GateId>, BoolCircuitError>;
+    fn get_const_gates(&self) -> Vec<GateId>;
     fn input(&mut self) -> Result<GateId, BoolCircuitError>;
     fn output(&mut self, gate_id: GateId) -> Result<WireId, BoolCircuitError>;
     fn constant(&mut self, value: bool) -> Result<GateId, BoolCircuitError>;
@@ -62,7 +64,10 @@ pub trait BoolCircuit<G: Gate>: Sized + Clone + PartialEq + Eq {
         module_id: &ModuleId,
         gate_ids: &[GateId],
     ) -> Result<Vec<GateId>, BoolCircuitError>;
-    fn modify_with_const_gates(&mut self) -> Result<(), BoolCircuitError>;
+    /*fn modify_with_const_gates(
+        &mut self,
+        other_const_gate_ids: &[(GateId, bool)],
+    ) -> Result<(), BoolCircuitError>;*/
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,6 +107,10 @@ impl<G: Gate, C: BoolCircuit<G>> BoolCircuitRef<G, C> {
         self.borrow().num_gate()
     }
 
+    pub fn num_const(&self) -> usize {
+        self.borrow().num_const()
+    }
+
     pub fn input_to_gate_id(&self, wire_id: &WireId) -> Result<Option<GateId>, BoolCircuitError> {
         self.borrow().input_to_gate_id(wire_id)
     }
@@ -120,6 +129,10 @@ impl<G: Gate, C: BoolCircuit<G>> BoolCircuitRef<G, C> {
 
     pub fn get_depended_gates(&self, gate_id: &GateId) -> Result<Vec<GateId>, BoolCircuitError> {
         self.borrow().get_depended_gates(gate_id)
+    }
+
+    pub fn get_const_gates(&self) -> Vec<GateId> {
+        self.borrow().get_const_gates()
     }
 
     pub fn input(&mut self) -> Result<GateId, BoolCircuitError> {
@@ -190,9 +203,18 @@ impl<G: Gate, C: BoolCircuit<G>> BoolCircuitRef<G, C> {
         self.borrow_mut().module(module_id, gate_ids)
     }
 
-    pub fn modify_with_const_gates(&mut self) -> Result<(), BoolCircuitError> {
-        self.borrow_mut().modify_with_const_gates()
-    }
+    /*pub fn modify_with_const_gates(&mut self) -> Result<(), BoolCircuitError> {
+        let mut const_gate_ids = Vec::new();
+        for (w_id, _, value) in (&self.1).borrow().iter() {
+            let gate_id = self
+                .borrow()
+                .input_to_gate_id(&w_id)?
+                .ok_or(BoolCircuitError::UnknownInput(*w_id))?;
+            const_gate_ids.push((gate_id, *value));
+        }
+        self.borrow_mut()
+            .modify_with_const_gates(&const_gate_ids[..])
+    }*/
 
     fn inner(&self) -> &Rc<RefCell<C>> {
         &self.0
@@ -340,6 +362,7 @@ impl<G: Gate, C: BoolCircuit<G>> ModuleStorageRef<G, C> {
 pub struct ModuleStorage<G: Gate, C: BoolCircuit<G>> {
     pub module_map: HashMap<ModuleId, BoolCircuitRef<G, C>>,
     pub num_module: usize,
+    pub fix_input_map: HashMap<ModuleId, (ModuleId, Vec<(WireId, G)>)>,
     _g: PhantomData<G>,
 }
 
@@ -347,9 +370,11 @@ impl<G: Gate, C: BoolCircuit<G>> ModuleStorage<G, C> {
     pub fn new() -> Self {
         let module_map = HashMap::new();
         let num_module = 0;
+        let fix_input_map = HashMap::new();
         Self {
             module_map,
             num_module,
+            fix_input_map,
             _g: PhantomData,
         }
     }
@@ -390,6 +415,7 @@ pub struct NXAOBoolCircuit {
     //pub num_module: usize,
     pub num_wire: usize,
     pub num_gate: usize,
+    pub num_const: usize,
     pub gate_index: usize,
 }
 
@@ -412,6 +438,10 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
 
     fn num_gate(&self) -> usize {
         self.num_gate
+    }
+
+    fn num_const(&self) -> usize {
+        self.num_const
     }
 
     fn input_to_gate_id(&self, wire_id: &WireId) -> Result<Option<GateId>, BoolCircuitError> {
@@ -444,11 +474,14 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
 
     fn get_depended_gates(&self, gate_id: &GateId) -> Result<Vec<GateId>, BoolCircuitError> {
         let ids = self.gate_dependence_map.get(gate_id);
-        if ids.is_none() {
-            Ok(Vec::new())
-        } else {
-            Ok(self.gate_dependence_map[gate_id].to_vec())
+        match ids {
+            None => Ok(Vec::new()),
+            Some(ids) => Ok(ids.to_vec()),
         }
+    }
+
+    fn get_const_gates(&self) -> Vec<GateId> {
+        self.const_gates.to_vec()
     }
 
     fn input(&mut self) -> Result<GateId, BoolCircuitError> {
@@ -475,6 +508,8 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
     fn constant(&mut self, value: bool) -> Result<GateId, BoolCircuitError> {
         let const_gate = ConstGate { value };
         let new_gate_id = self.add_gate(NXAOBoolGate::Const(const_gate));
+        self.const_gates.push(new_gate_id);
+        self.num_const += 1;
         Ok(new_gate_id)
     }
 
@@ -557,8 +592,10 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
         let output_len = module_circuit.output_len();
         let num_wire = module_circuit.num_wire();
         let num_gate = module_circuit.num_gate();
+        let num_const = module_circuit.num_const();
         self.num_wire += num_wire - input_len - output_len;
         self.num_gate += num_gate;
+        self.num_const += num_const;
         let new_gate_ids = (0..output_len)
             .into_iter()
             .map(|i| {
@@ -572,14 +609,19 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
                 self.add_gate(NXAOBoolGate::Module(module_gate))
             })
             .collect::<Vec<GateId>>();
-        for (input_id, self_id) in gate_ids.into_iter().zip(&new_gate_ids) {
-            self.add_dependence(input_id, self_id)?;
+        for input_id in gate_ids.into_iter() {
+            for out_id in new_gate_ids.iter() {
+                self.add_dependence(input_id, out_id)?;
+            }
         }
         Ok(new_gate_ids)
     }
 
-    fn modify_with_const_gates(&mut self) -> Result<(), BoolCircuitError> {
-        let const_gate_ids = &self.const_gates.clone();
+    /*fn modify_with_const_gates(
+        &mut self,
+        other_const_gate_ids: &[(GateId, bool)],
+    ) -> Result<(), BoolCircuitError> {
+        let const_gate_ids = self.const_gates.to_vec();
         for gate_id in const_gate_ids.iter() {
             let const_gate = match self.get_gate(&gate_id)? {
                 NXAOBoolGate::Const(g) => g,
@@ -589,10 +631,17 @@ impl BoolCircuit<NXAOBoolGate> for NXAOBoolCircuit {
             };
             let value = const_gate.value;
             self.modify_gate_with_fixed_value(gate_id, value)?;
+            self.gate_map.remove(gate_id);
+            self.gate_dependence_map.remove(gate_id);
+        }
+        for (gate_id, value) in other_const_gate_ids {
+            self.modify_gate_with_fixed_value(gate_id, *value)?;
+            self.gate_map.remove(gate_id);
+            self.gate_dependence_map.remove(gate_id);
         }
         self.const_gates = Vec::new();
         Ok(())
-    }
+    }*/
 }
 
 impl PartialEq for NXAOBoolCircuit {
@@ -625,6 +674,7 @@ impl NXAOBoolCircuit {
             output_len: 0,
             num_wire: 0,
             num_gate: 0,
+            num_const: 0,
             gate_index: 0,
         }
     }
@@ -655,7 +705,7 @@ impl NXAOBoolCircuit {
         Ok(())
     }
 
-    fn modify_gate_with_fixed_value(
+    /*fn modify_gate_with_fixed_value(
         &mut self,
         gate_id: &GateId,
         value: bool,
@@ -668,10 +718,12 @@ impl NXAOBoolCircuit {
                 NXAOBoolGate::Input(_) => {}
                 NXAOBoolGate::Const(_) => {}
                 NXAOBoolGate::Not(_) => {
+                    //println!("fix not gate_id {}, chhild_id {}", *gate_id, id);
                     let fixed_bit_not = !value;
                     self.modify_gate_with_fixed_value(&id, fixed_bit_not)?;
                 }
                 NXAOBoolGate::Xor(gate) => {
+                    //println!("fix xor gate_id {}, chhild_id {}", *gate_id, id);
                     let pair_input_gate_id = if gate.left_id == *gate_id {
                         gate.right_id
                     } else {
@@ -689,6 +741,7 @@ impl NXAOBoolCircuit {
                     }
                 }
                 NXAOBoolGate::And(gate) => {
+                    //println!("fix and gate_id {}, chhild_id {}", *gate_id, id);
                     let pair_input_gate_id = if gate.left_id == *gate_id {
                         gate.right_id
                     } else {
@@ -714,6 +767,7 @@ impl NXAOBoolCircuit {
                     }
                 }
                 NXAOBoolGate::Or(gate) => {
+                    //println!("fix or gate_id {}, chhild_id {}", *gate_id, id);
                     let pair_input_gate_id = if gate.left_id == *gate_id {
                         gate.right_id
                     } else {
@@ -724,40 +778,46 @@ impl NXAOBoolCircuit {
                         let new_gate = NotGate { id: not };
                         self.gate_map.insert(id, NXAOBoolGate::Not(new_gate));
                     } else {
+                        self.num_wire -= 1;
+                        let dependence = self
+                            .gate_dependence_map
+                            .get_mut(&pair_input_gate_id)
+                            .ok_or(BoolCircuitError::UnknownDependence(pair_input_gate_id))?;
+                        for i in 0..dependence.len() {
+                            if id == dependence[i] {
+                                dependence.remove(i);
+                                break;
+                            }
+                        }
                         self.modify_gate_with_fixed_value(&id, true)?;
                     }
                 }
                 NXAOBoolGate::Module(gate) => {
-                    let mut module_circuit = self.get_module(&gate.module_id)?.borrow().clone();
-                    let first_output_id = GateId(gate_id.0 - (gate.out_index as u64));
-                    let mut modified_input_gates = gate.input_gate_ids().clone();
+                    println!("module id {}",gate.module_id);
+                    //println!("fix module gate_id {}, chhild_id {}", *gate_id, id);
+                    let first_output_id = GateId(id.0 - (gate.out_index as u64));
                     let output_len = gate.output_len();
+                    let input_gates = &gate.input_ids;
 
-                    let const_gate = ConstGate { value };
-                    let index_of_fixed_input = gate
-                        .input_gate_ids()
-                        .iter()
-                        .position(|id| id == gate_id)
-                        .ok_or(BoolCircuitError::UnknownInputOfModule(
-                            *gate_id,
-                            gate.module_id,
-                        ))?;
+                    let index_of_fixed_input_op = input_gates.iter().position(|id| id == gate_id);
+                    let index_of_fixed_input = match index_of_fixed_input_op {
+                        Some(i) => i,
+                        None => return Ok(()),
+                    };
+                    let module_circuit = self.get_module(&gate.module_id)?;
                     let mut modified_input_wire_id = WireId(0);
-                    let mut modified_input_gate_id = GateId(0);
                     let mut i = 0;
                     while i <= index_of_fixed_input {
-                        if let Some(id) =
-                            module_circuit.input_to_gate_id(&modified_input_wire_id)?
-                        {
+                        if let Some(_) = module_circuit.input_to_gate_id(&modified_input_wire_id)? {
                             if i == index_of_fixed_input {
-                                modified_input_gate_id = id;
+                                //modified_input_gate_id = id;
                                 break;
                             }
                             i += 1;
                         }
                         modified_input_wire_id += WireId(1);
                     }
-                    module_circuit
+                    /*module_circuit
                         .gate_map
                         .insert(modified_input_gate_id, NXAOBoolGate::Const(const_gate));
                     module_circuit.input_len -= 1;
@@ -765,25 +825,56 @@ impl NXAOBoolCircuit {
                     module_circuit
                         .input_map
                         .insert(modified_input_wire_id, None);
-                    let modified_module_id = self.register_module(&module_circuit.to_ref());
-
-                    modified_input_gates.remove(index_of_fixed_input);
+                    let modified_module_id = self.register_module(&module_circuit.to_ref());*/
+                    let const_gate = ConstGate { value };
+                    let mut fix_vals = (&module_circuit.1).borrow().clone();
+                    fix_vals.push((
+                        modified_input_wire_id,
+                        NXAOBoolGate::Const(const_gate),
+                        value,
+                    ));
+                    let new_c_ref = BoolCircuitRef(
+                        module_circuit.0,
+                        Rc::new(RefCell::new(fix_vals)),
+                        PhantomData,
+                    );
+                    let new_module_id = self.register_module(&new_c_ref);
+                    /*match self.module_fix_input_map.get(&cur_module_id) {
+                        Some((parent_id, changes)) => {
+                            let mut new_change = changes.clone();
+                            new_change.push((modified_input_wire_id, NXAOBoolGate::Const(const_gate)));
+                            let parent_id = *parent_id;
+                            self.module_fix_input_map.insert(new_module_id, (parent_id, new_change));
+                        },
+                        None => {
+                            self.module_fix_input_map.insert(new_module_id, (cur_module_id, vec![(modified_input_wire_id,  NXAOBoolGate::Const(const_gate))]));
+                        }
+                    };*/
+                    //modified_input_gates.remove(index_of_fixed_input);
                     for i in 0..output_len {
                         let m_id = GateId(first_output_id.0 + (i as u64));
-                        let mut m_gate = match self.get_gate(&m_id)? {
-                            NXAOBoolGate::Module(g) => g.clone(),
+                        let mut m_gate = match self
+                            .gate_map
+                            .get_mut(&m_id)
+                            .ok_or(BoolCircuitError::UnknownGate(m_id))?
+                        {
+                            NXAOBoolGate::Module(g) => g,
                             _ => return Err(BoolCircuitError::NotModuleGate(m_id)),
                         };
+                        /*self.get_gate(&m_id)? {
+                            NXAOBoolGate::Module(g) => g.clone(),
+                            _ => return Err(BoolCircuitError::NotModuleGate(m_id)),
+                        };*/
                         m_gate.input_len -= 1;
-                        m_gate.input_ids = modified_input_gates.clone();
-                        m_gate.module_id = modified_module_id;
-                        self.gate_map.insert(m_id, NXAOBoolGate::Module(m_gate));
+                        m_gate.input_ids.remove(index_of_fixed_input);
+                        m_gate.module_id = new_module_id;
+                        //self.gate_map.insert(m_id, NXAOBoolGate::Module(m_gate));
                     }
                 }
             }
         }
         Ok(())
-    }
+    }*/
 }
 
 #[cfg(test)]

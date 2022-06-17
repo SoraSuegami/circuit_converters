@@ -83,7 +83,6 @@ pub trait BooleanElement: Clone + Eq {
 pub trait Gate: Clone + Eq {
     fn input_len(&self) -> usize;
     fn output_len(&self) -> usize;
-    fn input_gate_ids(&self) -> Vec<GateId>;
     fn to_str(&self) -> String;
 }
 
@@ -121,17 +120,6 @@ impl Gate for NXAOBoolGate {
             NXAOBoolGate::Module(g) => g.output_len(),
         }
     }
-    fn input_gate_ids(&self) -> Vec<GateId> {
-        match self {
-            NXAOBoolGate::Input(g) => g.input_gate_ids(),
-            NXAOBoolGate::Const(g) => g.input_gate_ids(),
-            NXAOBoolGate::Not(g) => g.input_gate_ids(),
-            NXAOBoolGate::And(g) => g.input_gate_ids(),
-            NXAOBoolGate::Xor(g) => g.input_gate_ids(),
-            NXAOBoolGate::Or(g) => g.input_gate_ids(),
-            NXAOBoolGate::Module(g) => g.input_gate_ids(),
-        }
-    }
     fn to_str(&self) -> String {
         match self {
             NXAOBoolGate::Input(g) => g.to_str(),
@@ -159,10 +147,6 @@ impl Gate for InputGate {
         1
     }
 
-    fn input_gate_ids(&self) -> Vec<GateId> {
-        vec![]
-    }
-
     fn to_str(&self) -> String {
         "INPUT".to_string()
     }
@@ -182,10 +166,6 @@ impl Gate for ConstGate {
         1
     }
 
-    fn input_gate_ids(&self) -> Vec<GateId> {
-        vec![]
-    }
-
     fn to_str(&self) -> String {
         "CONST".to_string()
     }
@@ -203,10 +183,6 @@ impl Gate for NotGate {
 
     fn output_len(&self) -> usize {
         1
-    }
-
-    fn input_gate_ids(&self) -> Vec<GateId> {
-        vec![self.id]
     }
 
     fn to_str(&self) -> String {
@@ -229,10 +205,6 @@ impl Gate for XorGate {
         1
     }
 
-    fn input_gate_ids(&self) -> Vec<GateId> {
-        vec![self.left_id, self.right_id]
-    }
-
     fn to_str(&self) -> String {
         "XOR".to_string()
     }
@@ -253,10 +225,6 @@ impl Gate for AndGate {
         1
     }
 
-    fn input_gate_ids(&self) -> Vec<GateId> {
-        vec![self.left_id, self.right_id]
-    }
-
     fn to_str(&self) -> String {
         "AND".to_string()
     }
@@ -275,10 +243,6 @@ impl Gate for OrGate {
 
     fn output_len(&self) -> usize {
         1
-    }
-
-    fn input_gate_ids(&self) -> Vec<GateId> {
-        vec![self.left_id, self.right_id]
     }
 
     fn to_str(&self) -> String {
@@ -302,10 +266,6 @@ impl Gate for ModuleGate {
 
     fn output_len(&self) -> usize {
         self.output_len
-    }
-
-    fn input_gate_ids(&self) -> Vec<GateId> {
-        self.input_ids.to_vec()
     }
 
     fn to_str(&self) -> String {

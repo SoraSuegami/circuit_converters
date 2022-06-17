@@ -81,16 +81,16 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocInt<G, C, N> {
 
     pub fn eq(&self, other: &Self) -> Result<GateId, BuildCircuitError> {
         let mut config = self.config.clone();
-        let new_ref = &mut config.c_ref;
-        let inputs = [&self.val_le[..], &other.val_le[..]].concat();
+        let new_ref: &mut BoolCircuitRef<G, C> = &mut config.c_ref;
+        let inputs = [&self.val_le[0..N], &other.val_le[0..N]].concat();
         let eq_bit = new_ref.module(&self.config.eq_mid, &inputs)?[0];
         Ok(eq_bit)
     }
 
     pub fn neq(&self, other: &Self) -> Result<GateId, BuildCircuitError> {
         let mut config = self.config.clone();
-        let new_ref = &mut config.c_ref;
-        let inputs = [&self.val_le[..], &other.val_le[..]].concat();
+        let new_ref: &mut BoolCircuitRef<G, C> = &mut config.c_ref;
+        let inputs = [&self.val_le[0..N], &other.val_le[0..N]].concat();
         let neq_bit = new_ref.module(&self.config.neq_mid, &inputs)?[0];
         Ok(neq_bit)
     }
@@ -98,7 +98,7 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocInt<G, C, N> {
     pub fn less(&self, other: &Self) -> Result<GateId, BuildCircuitError> {
         let mut config = self.config.clone();
         let new_ref = &mut config.c_ref;
-        let inputs = [&self.val_le[..], &other.val_le[..]].concat();
+        let inputs = [&self.val_le[0..N], &other.val_le[0..N]].concat();
         let less_bit = new_ref.module(&self.config.less_mid, &inputs)?[0];
         Ok(less_bit)
     }
@@ -106,7 +106,7 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocInt<G, C, N> {
     pub fn less_or_eq(&self, other: &Self) -> Result<GateId, BuildCircuitError> {
         let mut config = self.config.clone();
         let new_ref = &mut config.c_ref;
-        let inputs = [&self.val_le[..], &other.val_le[..]].concat();
+        let inputs = [&self.val_le[0..N], &other.val_le[0..N]].concat();
         let less_or_eq_bit = new_ref.module(&self.config.less_or_eq_mid, &inputs)?[0];
         Ok(less_or_eq_bit)
     }
@@ -114,7 +114,7 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocInt<G, C, N> {
     pub fn larger(&self, other: &Self) -> Result<GateId, BuildCircuitError> {
         let mut config = self.config.clone();
         let new_ref = &mut config.c_ref;
-        let inputs = [&self.val_le[..], &other.val_le[..]].concat();
+        let inputs = [&self.val_le[0..N], &other.val_le[0..N]].concat();
         let larger_bit = new_ref.module(&self.config.larger_mid, &inputs)?[0];
         Ok(larger_bit)
     }
@@ -122,7 +122,7 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocInt<G, C, N> {
     pub fn larger_or_eq(&self, other: &Self) -> Result<GateId, BuildCircuitError> {
         let mut config = self.config.clone();
         let new_ref = &mut config.c_ref;
-        let inputs = [&self.val_le[..], &other.val_le[..]].concat();
+        let inputs = [&self.val_le[0..N], &other.val_le[0..N]].concat();
         let larger_or_eq_bit = new_ref.module(&self.config.larger_or_eq_mid, &inputs)?[0];
         Ok(larger_or_eq_bit)
     }

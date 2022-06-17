@@ -1,7 +1,7 @@
-use crate::{bool_circuit::*, ext_gcd};
 use crate::circuits::{arithmetic::*, BuildCircuitError};
 use crate::gates::*;
-use num_bigint::{BigUint, BigInt};
+use crate::{bool_circuit::*, ext_gcd};
+use num_bigint::{BigInt, BigUint};
 use num_traits::Zero;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
@@ -175,7 +175,7 @@ pub struct AllocFpConfig<G: Gate, C: BoolCircuit<G>, const N: usize> {
     pub add_mid: ModuleId,
     pub sub_mid: ModuleId,
     pub mul_mid: ModuleId,
-    pub mont_red_mid: ModuleId
+    pub mont_red_mid: ModuleId,
 }
 
 impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocFpConfig<G, C, N> {
@@ -190,8 +190,8 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocFpConfig<G, C, N> {
         let r2 = ((&r) * (&r)) % (&r);
         let p_inv = Self::mod_inv(p.clone(), r.clone());
         let p_minus_inv = (&r) - (&p_inv);
-        let add_mid = Self::build_add_circuit(&mut c_ref,int_config,&p)?;
-        let sub_mid = Self::build_sub_circuit(&mut c_ref,int_config,add_mid)?;
+        let add_mid = Self::build_add_circuit(&mut c_ref, int_config, &p)?;
+        let sub_mid = Self::build_sub_circuit(&mut c_ref, int_config, add_mid)?;
         let mont_red_mid = Self::build_mont_red(&mut c_ref, int_config, &p, &p_minus_inv, r_exp)?;
         let mul_mid = Self::build_mul_circuit(&mut c_ref, int_config, &r2, mont_red_mid)?;
         Ok(Self {
@@ -204,11 +204,15 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocFpConfig<G, C, N> {
             add_mid,
             sub_mid,
             mul_mid,
-            mont_red_mid
+            mont_red_mid,
         })
     }
 
-    fn build_add_circuit(c_ref:&mut BoolCircuitRef<G,C>, int_config: &AllocIntConfig<G,C,N>, p: &BigUint) -> Result<ModuleId, BuildCircuitError> {
+    fn build_add_circuit(
+        c_ref: &mut BoolCircuitRef<G, C>,
+        int_config: &AllocIntConfig<G, C, N>,
+        p: &BigUint,
+    ) -> Result<ModuleId, BuildCircuitError> {
         let (mid, mut sub_ref) = c_ref.sub_circuit();
         let mut int_config = int_config.clone();
         int_config.c_ref = sub_ref.clone();
@@ -233,7 +237,11 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocFpConfig<G, C, N> {
         Ok(mid)
     }
 
-    fn build_sub_circuit(c_ref: &mut BoolCircuitRef<G, C>, int_config: &AllocIntConfig<G,C,N>, add_mid:ModuleId) -> Result<ModuleId, BuildCircuitError> {
+    fn build_sub_circuit(
+        c_ref: &mut BoolCircuitRef<G, C>,
+        int_config: &AllocIntConfig<G, C, N>,
+        add_mid: ModuleId,
+    ) -> Result<ModuleId, BuildCircuitError> {
         let (mid, mut sub_ref) = c_ref.sub_circuit();
         let mut int_config = int_config.clone();
         int_config.c_ref = sub_ref.clone();
@@ -242,7 +250,7 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocFpConfig<G, C, N> {
 
         let r = -&r;
         let inputs = [l.val_le, r.val_le].concat();
-        let out = AllocInt::from_gate_ids(sub_ref.module(&add_mid, &inputs)?,&int_config)?;
+        let out = AllocInt::from_gate_ids(sub_ref.module(&add_mid, &inputs)?, &int_config)?;
         out.output()?;
         Ok(mid)
     }
@@ -251,7 +259,7 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocFpConfig<G, C, N> {
         c_ref: &mut BoolCircuitRef<G, C>,
         int_config: &AllocIntConfig<G, C, N>,
         r2: &BigUint,
-        mont_red_mid:ModuleId
+        mont_red_mid: ModuleId,
     ) -> Result<ModuleId, BuildCircuitError> {
         let (mid, mut sub_ref) = c_ref.sub_circuit();
         let mut int_config = int_config.clone();
@@ -259,10 +267,14 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocFpConfig<G, C, N> {
         let l = AllocInt::new(&int_config)?;
         let r = AllocInt::new(&int_config)?;
         let lr = (&l) * (&r);
-        let lr_mod = AllocInt::from_gate_ids(sub_ref.module(&mont_red_mid,&lr.val_le)?, &int_config)?;
+        let lr_mod =
+            AllocInt::from_gate_ids(sub_ref.module(&mont_red_mid, &lr.val_le)?, &int_config)?;
         let r2_int = AllocInt::from_biguint(r2, &int_config)?;
         let lr_mod_r2 = (&lr_mod) * (&r2_int);
-        let out = AllocInt::from_gate_ids(sub_ref.module(&mont_red_mid, &lr_mod_r2.val_le)?, &int_config)?;
+        let out = AllocInt::from_gate_ids(
+            sub_ref.module(&mont_red_mid, &lr_mod_r2.val_le)?,
+            &int_config,
+        )?;
         out.output()?;
         Ok(mid)
     }
@@ -302,10 +314,10 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocFpConfig<G, C, N> {
         Ok(mid)
     }
 
-    fn mod_inv(val:BigUint, p:BigUint) -> BigUint {
+    fn mod_inv(val: BigUint, p: BigUint) -> BigUint {
         let a = BigInt::from(val);
         let b = BigInt::from(p);
-        let (x,_,_) = ext_gcd(&a, &b);
+        let (x, _, _) = ext_gcd(&a, &b);
         let (_, bytes_le) = if x < BigInt::zero() {
             (x + b).to_bytes_le()
         } else {
@@ -331,13 +343,13 @@ mod test {
     #[test]
     fn fp_add_sub_mul_test() {
         let p = BigUint::parse_bytes(b"11", 10).unwrap();
-        const REXP:usize = 4;
-        const N:usize = 2*REXP;
+        const REXP: usize = 4;
+        const N: usize = 2 * REXP;
 
         let circuit = NXAOBoolCircuit::new(ModuleStorageRef::new());
         let mut c_ref = circuit.to_ref();
         let int_config = AllocIntConfig::new(&c_ref).unwrap();
-        let config = AllocFpConfig::<_,_,N>::new(&mut c_ref,&int_config,p,REXP).unwrap();
+        let config = AllocFpConfig::<_, _, N>::new(&mut c_ref, &int_config, p, REXP).unwrap();
         let int1 = AllocFp::<_, _, N>::new(&config).unwrap();
         let int2 = AllocFp::<_, _, N>::new(&config).unwrap();
         let int3 = AllocFp::<_, _, N>::new(&config).unwrap();
@@ -357,6 +369,6 @@ mod test {
             inputs[i] = rng.gen();
         }
         let outputs = evaluator.eval_output(&inputs).unwrap();
-        assert_eq!(outputs, vec![true,true]);
+        assert_eq!(outputs, vec![true, true]);
     }
 }

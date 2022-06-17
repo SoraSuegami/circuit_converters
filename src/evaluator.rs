@@ -179,9 +179,9 @@ impl NXAOBoolEvaluator {
                 Ok(())
             }
             NXAOBoolGate::Module(gate) => {
-                let input_ids = gate.input_gate_ids();
+                let input_ids = &gate.input_ids;
                 let mut input_bits: Vec<bool> = Vec::new();
-                for id in &input_ids {
+                for id in input_ids {
                     if evaled_map.get(id).is_none() {
                         let input_gate = self.circuit.get_gate(id)?;
                         self.eval_single_gate(inputs, id, &input_gate, evaled_map)?;
