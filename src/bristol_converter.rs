@@ -191,6 +191,7 @@ impl<W: Write> BristolNXAOWriter<W> {
 
     pub fn write(
         &mut self,
+        num_first_input: usize,
         wire_of_gate: Option<&mut HashMap<GateId, usize>>,
     ) -> Result<HashMap<usize, bool>, BristolError> {
         let input_len = self.c_ref.input_len();
@@ -201,7 +202,13 @@ impl<W: Write> BristolNXAOWriter<W> {
         let first_line = format!("{} {}\n", num_gate, num_wire + num_const);
         self.writer.write_all(first_line.as_bytes())?;
 
-        let second_line = format!("1 {}\n", input_len + num_const);
+        let num_all_input = input_len + num_const;
+        assert!(num_all_input >= num_first_input);
+        let second_line = format!(
+            "2 {} {}\n",
+            num_first_input,
+            num_all_input - num_first_input
+        );
         self.writer.write_all(second_line.as_bytes())?;
         let third_line = format!("1 {}\n", output_len);
         self.writer.write_all(third_line.as_bytes())?;
