@@ -193,7 +193,7 @@ impl<W: Write> BristolNXAOWriter<W> {
         &mut self,
         num_first_input: usize,
         wire_of_gate: Option<&mut HashMap<GateId, usize>>,
-    ) -> Result<HashMap<usize, bool>, BristolError> {
+    ) -> Result<Vec<bool>, BristolError> {
         let input_len = self.c_ref.input_len();
         let output_len = self.c_ref.output_len();
         let num_const = self.c_ref.num_const();
@@ -237,7 +237,11 @@ impl<W: Write> BristolNXAOWriter<W> {
         self.last_const_wire = input_len;
         self.num_wire += num_const;
         self.write_all_gates(wire_of_gate, &mut const_of_wire)?;
-        Ok(const_of_wire)
+        let mut const_vals = Vec::new();
+        for wire in input_len .. self.last_const_wire {
+            const_vals.push(const_of_wire[&wire]);
+        }
+        Ok(const_vals)
     }
 
     fn write_all_gates(
@@ -563,7 +567,7 @@ mod test {
 
         let buf_writer = BufWriter::new(Vec::new());
         let mut writer = BristolNXAOWriter::new(c_ref.clone(), buf_writer);
-        writer.write(None).unwrap();
+        writer.write(0,None).unwrap();
         //println!("{}", writer.writer);
         let mut reader = BristolNXAOReader::new();
         let vec = writer.writer.into_inner().unwrap();
@@ -584,7 +588,7 @@ mod test {
 
         let buf_writer = BufWriter::new(Vec::new());
         let mut writer = BristolNXAOWriter::new(c_ref.clone(), buf_writer);
-        writer.write(None).unwrap();
+        writer.write(0,None).unwrap();
         //println!("{}", writer.writer);
         let mut reader = BristolNXAOReader::new();
         let vec = writer.writer.into_inner().unwrap();
@@ -605,7 +609,7 @@ mod test {
 
         let buf_writer = BufWriter::new(Vec::new());
         let mut writer = BristolNXAOWriter::new(c_ref.clone(), buf_writer);
-        writer.write(None).unwrap();
+        writer.write(0,None).unwrap();
         //println!("{}", writer.writer);
         let mut reader = BristolNXAOReader::new();
         let vec = writer.writer.into_inner().unwrap();
@@ -626,7 +630,7 @@ mod test {
 
         let buf_writer = BufWriter::new(Vec::new());
         let mut writer = BristolNXAOWriter::new(c_ref.clone(), buf_writer);
-        writer.write(None).unwrap();
+        writer.write(0,None).unwrap();
         //println!("{}", writer.writer);
         let mut reader = BristolNXAOReader::new();
         let vec = writer.writer.into_inner().unwrap();
@@ -657,7 +661,7 @@ mod test {
 
         let buf_writer = BufWriter::new(Vec::new());
         let mut writer = BristolNXAOWriter::new(c_ref.clone(), buf_writer);
-        writer.write(None).unwrap();
+        writer.write(0,None).unwrap();
         //println!("{}", writer.writer);
         let mut reader = BristolNXAOReader::new();
         let vec = writer.writer.into_inner().unwrap();
