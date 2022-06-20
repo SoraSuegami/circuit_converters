@@ -37,6 +37,7 @@ impl BoolEvaluator<NXAOBoolGate, NXAOBoolCircuit> for NXAOBoolEvaluator {
         let mut evaled_map = HashMap::<GateId, bool>::new();
         let mut last_input_wire_id = WireId(0);
         let mut i = 0;
+        assert_eq!(inputs.len(), circuit.input_len());
         while i < inputs.len() {
             let gate_id = circuit.input_to_gate_id(&last_input_wire_id)?;
             match gate_id {
@@ -88,6 +89,9 @@ impl NXAOBoolEvaluator {
         };
 
         let output_gate_id = self.circuit.output_to_gate_id(wire_id)?;
+        if evaled_map.get(&output_gate_id).is_some() {
+            return Ok(evaled_map[&output_gate_id]);
+        }
         let output_gate = self.circuit.get_gate(&output_gate_id)?;
         self.eval_single_gate(inputs, &output_gate_id, &output_gate, evaled_map)?;
         let output_bit = evaled_map

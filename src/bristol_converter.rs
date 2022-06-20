@@ -238,7 +238,7 @@ impl<W: Write> BristolNXAOWriter<W> {
         self.num_wire += num_const;
         self.write_all_gates(wire_of_gate, &mut const_of_wire)?;
         let mut const_vals = Vec::new();
-        for wire in input_len .. self.last_const_wire {
+        for wire in input_len..self.last_const_wire {
             const_vals.push(const_of_wire[&wire]);
         }
         Ok(const_vals)
@@ -567,7 +567,7 @@ mod test {
 
         let buf_writer = BufWriter::new(Vec::new());
         let mut writer = BristolNXAOWriter::new(c_ref.clone(), buf_writer);
-        writer.write(0,None).unwrap();
+        writer.write(0, None).unwrap();
         //println!("{}", writer.writer);
         let mut reader = BristolNXAOReader::new();
         let vec = writer.writer.into_inner().unwrap();
@@ -588,7 +588,7 @@ mod test {
 
         let buf_writer = BufWriter::new(Vec::new());
         let mut writer = BristolNXAOWriter::new(c_ref.clone(), buf_writer);
-        writer.write(0,None).unwrap();
+        writer.write(0, None).unwrap();
         //println!("{}", writer.writer);
         let mut reader = BristolNXAOReader::new();
         let vec = writer.writer.into_inner().unwrap();
@@ -609,7 +609,7 @@ mod test {
 
         let buf_writer = BufWriter::new(Vec::new());
         let mut writer = BristolNXAOWriter::new(c_ref.clone(), buf_writer);
-        writer.write(0,None).unwrap();
+        writer.write(0, None).unwrap();
         //println!("{}", writer.writer);
         let mut reader = BristolNXAOReader::new();
         let vec = writer.writer.into_inner().unwrap();
@@ -630,7 +630,7 @@ mod test {
 
         let buf_writer = BufWriter::new(Vec::new());
         let mut writer = BristolNXAOWriter::new(c_ref.clone(), buf_writer);
-        writer.write(0,None).unwrap();
+        writer.write(0, None).unwrap();
         //println!("{}", writer.writer);
         let mut reader = BristolNXAOReader::new();
         let vec = writer.writer.into_inner().unwrap();
@@ -661,7 +661,7 @@ mod test {
 
         let buf_writer = BufWriter::new(Vec::new());
         let mut writer = BristolNXAOWriter::new(c_ref.clone(), buf_writer);
-        writer.write(0,None).unwrap();
+        writer.write(0, None).unwrap();
         //println!("{}", writer.writer);
         let mut reader = BristolNXAOReader::new();
         let vec = writer.writer.into_inner().unwrap();
