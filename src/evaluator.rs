@@ -35,6 +35,7 @@ impl BoolEvaluator<NXAOBoolGate, NXAOBoolCircuit> for NXAOBoolEvaluator {
         let output_len = circuit.output_len();
         let mut outputs = Vec::new();
         let mut evaled_map = HashMap::<GateId, bool>::new();
+        let mut num_depend_map = HashMap::<GateId, usize>::new();
         let mut last_input_wire_id = WireId(0);
         let mut i = 0;
         assert_eq!(inputs.len(), circuit.input_len());
@@ -43,6 +44,7 @@ impl BoolEvaluator<NXAOBoolGate, NXAOBoolCircuit> for NXAOBoolEvaluator {
             match gate_id {
                 Some(id) => {
                     evaled_map.insert(id, inputs[i]);
+                    num_depend_map.insert(id, circuit.get_depended_gates(&id)?.len());
                     i += 1;
                 }
                 None => {}
@@ -52,7 +54,7 @@ impl BoolEvaluator<NXAOBoolGate, NXAOBoolCircuit> for NXAOBoolEvaluator {
 
         for i in 0..output_len {
             let wire_id = WireId(i as u64);
-            let output = self.eval_single_output(inputs, &wire_id, Some(&mut evaled_map))?;
+            let output = self.eval_single_output(inputs, &wire_id, Some(&mut evaled_map), Some(&mut num_depend_map))?;
             outputs.push(output);
         }
         Ok(outputs)
@@ -69,6 +71,7 @@ impl NXAOBoolEvaluator {
         inputs: &[bool],
         wire_id: &WireId,
         evaled_map: Option<&mut HashMap<GateId, bool>>,
+        num_depend_map: Option<&mut HashMap<GateId, usize>>
     ) -> Result<bool, EvaluatorError> {
         if inputs.len() != self.circuit.input_len() {
             return Err(EvaluatorError::InvalidInputLen(
@@ -87,13 +90,17 @@ impl NXAOBoolEvaluator {
             Some(m) => m,
             None => &mut new_evaled_map,
         };
+        let mut new_num_depend_map = HashMap::<GateId, usize>::new();
+        let num_depend_map = match num_depend_map {
+            Some(m) => m,
+            None => &mut new_num_depend_map,
+        };
 
         let output_gate_id = self.circuit.output_to_gate_id(wire_id)?;
         if evaled_map.get(&output_gate_id).is_some() {
             return Ok(evaled_map[&output_gate_id]);
         }
-        let output_gate = self.circuit.get_gate(&output_gate_id)?;
-        self.eval_single_gate(inputs, &output_gate_id, &output_gate, evaled_map)?;
+        self.eval_single_gate(&output_gate_id, evaled_map, num_depend_map)?;
         let output_bit = evaled_map
             .get(&output_gate_id)
             .ok_or(EvaluatorError::UnknownEvaledBit(output_gate_id))?;
@@ -102,37 +109,44 @@ impl NXAOBoolEvaluator {
 
     fn eval_single_gate(
         &self,
-        inputs: &[bool],
         gate_id: &GateId,
-        gate: &NXAOBoolGate,
         evaled_map: &mut HashMap<GateId, bool>,
+        num_depend_map: &mut HashMap<GateId, usize>
     ) -> Result<(), EvaluatorError> {
+        let gate = self.circuit.get_gate(gate_id)?;
         match gate {
             NXAOBoolGate::Input(_) => Ok(()),
             NXAOBoolGate::Const(gate) => {
                 evaled_map.insert(*gate_id, gate.value);
+                let num_depend = self.circuit.get_depended_gates(gate_id)?.len();
+                num_depend_map.insert(*gate_id, num_depend);
                 Ok(())
             }
             NXAOBoolGate::Not(gate) => {
                 if evaled_map.get(&gate.id).is_none() {
-                    let input_gate = self.circuit.get_gate(&gate.id)?;
-                    self.eval_single_gate(inputs, &gate.id, &input_gate, evaled_map)?;
+                    self.eval_single_gate(&gate.id, evaled_map, num_depend_map)?;
                 }
                 let input_bit = evaled_map
                     .get(&gate.id)
                     .ok_or(EvaluatorError::UnknownEvaledBit(gate.id))?;
                 let output_bit = !input_bit;
+                num_depend_map.insert(gate.id, num_depend_map[&gate.id]-1);
+                if num_depend_map[&gate.id]==0 {
+                    evaled_map.remove(&gate.id);
+                    num_depend_map.remove(&gate.id);
+                }
+                
                 evaled_map.insert(*gate_id, output_bit);
+                let num_depend = self.circuit.get_depended_gates(gate_id)?.len();
+                num_depend_map.insert(*gate_id, num_depend);
                 Ok(())
             }
             NXAOBoolGate::Xor(gate) => {
                 if evaled_map.get(&gate.left_id).is_none() {
-                    let input_gate = self.circuit.get_gate(&gate.left_id)?;
-                    self.eval_single_gate(inputs, &gate.left_id, &input_gate, evaled_map)?;
+                    self.eval_single_gate(&gate.left_id, evaled_map, num_depend_map)?;
                 }
                 if evaled_map.get(&gate.right_id).is_none() {
-                    let input_gate = self.circuit.get_gate(&gate.right_id)?;
-                    self.eval_single_gate(inputs, &gate.right_id, &input_gate, evaled_map)?;
+                    self.eval_single_gate(&gate.right_id, evaled_map, num_depend_map)?;
                 }
                 let input_bit_l = evaled_map
                     .get(&gate.left_id)
@@ -141,17 +155,28 @@ impl NXAOBoolEvaluator {
                     .get(&gate.right_id)
                     .ok_or(EvaluatorError::UnknownEvaledBit(gate.right_id))?;
                 let output_bit = *input_bit_l ^ *input_bit_r;
+                num_depend_map.insert(gate.left_id, num_depend_map[&gate.left_id]-1);
+                if num_depend_map[&gate.left_id]==0 {
+                    evaled_map.remove(&gate.left_id);
+                    num_depend_map.remove(&gate.left_id);
+                }
+                num_depend_map.insert(gate.right_id, num_depend_map[&gate.right_id]-1);
+                if num_depend_map[&gate.right_id]==0 {
+                    evaled_map.remove(&gate.right_id);
+                    num_depend_map.remove(&gate.right_id);
+                }
+
                 evaled_map.insert(*gate_id, output_bit);
+                let num_depend = self.circuit.get_depended_gates(gate_id)?.len();
+                num_depend_map.insert(*gate_id, num_depend);
                 Ok(())
             }
             NXAOBoolGate::And(gate) => {
                 if evaled_map.get(&gate.left_id).is_none() {
-                    let input_gate = self.circuit.get_gate(&gate.left_id)?;
-                    self.eval_single_gate(inputs, &gate.left_id, &input_gate, evaled_map)?;
+                    self.eval_single_gate(&gate.left_id, evaled_map, num_depend_map)?;
                 }
                 if evaled_map.get(&gate.right_id).is_none() {
-                    let input_gate = self.circuit.get_gate(&gate.right_id)?;
-                    self.eval_single_gate(inputs, &gate.right_id, &input_gate, evaled_map)?;
+                    self.eval_single_gate(&gate.right_id, evaled_map, num_depend_map)?;
                 }
                 let input_bit_l = evaled_map
                     .get(&gate.left_id)
@@ -160,17 +185,28 @@ impl NXAOBoolEvaluator {
                     .get(&gate.right_id)
                     .ok_or(EvaluatorError::UnknownEvaledBit(gate.right_id))?;
                 let output_bit = *input_bit_l & *input_bit_r;
+                num_depend_map.insert(gate.left_id, num_depend_map[&gate.left_id]-1);
+                if num_depend_map[&gate.left_id]==0 {
+                    evaled_map.remove(&gate.left_id);
+                    num_depend_map.remove(&gate.left_id);
+                }
+                num_depend_map.insert(gate.right_id, num_depend_map[&gate.right_id]-1);
+                if num_depend_map[&gate.right_id]==0 {
+                    evaled_map.remove(&gate.right_id);
+                    num_depend_map.remove(&gate.right_id);
+                }
+
                 evaled_map.insert(*gate_id, output_bit);
+                let num_depend = self.circuit.get_depended_gates(gate_id)?.len();
+                num_depend_map.insert(*gate_id, num_depend);
                 Ok(())
             }
             NXAOBoolGate::Or(gate) => {
                 if evaled_map.get(&gate.left_id).is_none() {
-                    let input_gate = self.circuit.get_gate(&gate.left_id)?;
-                    self.eval_single_gate(inputs, &gate.left_id, &input_gate, evaled_map)?;
+                    self.eval_single_gate(&gate.left_id, evaled_map, num_depend_map)?;
                 }
                 if evaled_map.get(&gate.right_id).is_none() {
-                    let input_gate = self.circuit.get_gate(&gate.right_id)?;
-                    self.eval_single_gate(inputs, &gate.right_id, &input_gate, evaled_map)?;
+                    self.eval_single_gate(&gate.right_id, evaled_map, num_depend_map)?;
                 }
                 let input_bit_l = evaled_map
                     .get(&gate.left_id)
@@ -179,7 +215,20 @@ impl NXAOBoolEvaluator {
                     .get(&gate.right_id)
                     .ok_or(EvaluatorError::UnknownEvaledBit(gate.right_id))?;
                 let output_bit = *input_bit_l | *input_bit_r;
+                num_depend_map.insert(gate.left_id, num_depend_map[&gate.left_id]-1);
+                if num_depend_map[&gate.left_id]==0 {
+                    evaled_map.remove(&gate.left_id);
+                    num_depend_map.remove(&gate.left_id);
+                }
+                num_depend_map.insert(gate.right_id, num_depend_map[&gate.right_id]-1);
+                if num_depend_map[&gate.right_id]==0 {
+                    evaled_map.remove(&gate.right_id);
+                    num_depend_map.remove(&gate.right_id);
+                }
+
                 evaled_map.insert(*gate_id, output_bit);
+                let num_depend = self.circuit.get_depended_gates(gate_id)?.len();
+                num_depend_map.insert(*gate_id, num_depend);
                 Ok(())
             }
             NXAOBoolGate::Module(gate) => {
@@ -187,8 +236,7 @@ impl NXAOBoolEvaluator {
                 let mut input_bits: Vec<bool> = Vec::new();
                 for id in input_ids {
                     if evaled_map.get(id).is_none() {
-                        let input_gate = self.circuit.get_gate(id)?;
-                        self.eval_single_gate(inputs, id, &input_gate, evaled_map)?;
+                        self.eval_single_gate(id, evaled_map, num_depend_map)?;
                     }
                     let val = evaled_map
                         .get(id)
@@ -199,10 +247,20 @@ impl NXAOBoolEvaluator {
                 let module_circuit = self.circuit.get_module(&gate.module_id)?;
                 let mut evaluator = Self::new(module_circuit);
                 let output_bits = evaluator.eval_output(&input_bits)?;
+                for id in input_ids {
+                    num_depend_map.insert(*id, num_depend_map[id]-1);
+                    if num_depend_map[id]==0 {
+                        evaled_map.remove(id);
+                        num_depend_map.remove(id);
+                    }
+                }
+
                 let first_output_id = GateId(gate_id.0 - (gate.out_index as u64));
                 for i in 0..gate.output_len() {
                     let output_id = GateId(first_output_id.0 + (i as u64));
                     evaled_map.insert(output_id, output_bits[i]);
+                    let num_depend = self.circuit.get_depended_gates(&output_id)?.len();
+                    num_depend_map.insert(output_id, num_depend);
                 }
                 Ok(())
             }

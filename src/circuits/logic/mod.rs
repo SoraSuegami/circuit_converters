@@ -23,6 +23,21 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocBits<G, C, N> {
         })
     }
 
+    pub fn from_gate_ids(
+        bits: Vec<GateId>,
+        config: &AllocBitsConfig<G, C, N>,
+    ) -> Result<Self, BuildCircuitError> {
+        assert!(bits.len() <= N);
+        let config = config.clone();
+        let mut config = config.clone();
+        let new_ref = &mut config.c_ref;
+        let mut bits = bits;
+        for _ in 0..(N - bits.len()) {
+            bits.push(new_ref.constant(false)?);
+        }
+        Ok(Self { bits, config })
+    }
+
     pub fn output(&self) -> Result<(), BuildCircuitError> {
         let mut c_ref = self.config.c_ref.clone();
         for i in 0..N {
@@ -45,6 +60,22 @@ impl<G: Gate, C: BoolCircuit<G>, const N: usize> AllocBits<G, C, N> {
         let inputs = [&self.bits[..], &other.bits[..]].concat();
         let neq_bit = new_ref.module(&self.config.neq_mid, &inputs)?[0];
         Ok(neq_bit)
+    }
+
+    pub fn mux(&self, true_bits: &Self, select_bit: &GateId) -> Result<Self, BuildCircuitError> {
+        let mut config = self.config.clone();
+        let new_ref = &mut config.c_ref;
+        let mut selected_bits = Vec::new();
+        let not_s = new_ref.not(select_bit)?;
+        for i in 0..N {
+            let false_bit = new_ref.and(&self.bits[i],&not_s)?;
+            let true_bit = new_ref.and(&true_bits.bits[i], &select_bit)?;
+            selected_bits.push(new_ref.xor(&false_bit, &true_bit)?);
+        }
+        Ok(Self {
+            bits: selected_bits,
+            config
+        })
     }
 }
 
